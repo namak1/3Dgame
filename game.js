@@ -814,17 +814,17 @@ for (let i = 0; i < 3; i++) {
 }
 
 // Name across the transom, drawn to a canvas so the page stays asset-free.
-function namePlateTexture(label) {
+function namePlateTexture(label, background = '#12202b', ink = '#efe3c6') {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#12202b';
+  ctx.fillStyle = background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#e2d3ad';
+  ctx.strokeStyle = ink;
   ctx.lineWidth = 4;
   ctx.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
-  ctx.fillStyle = '#efe3c6';
+  ctx.fillStyle = ink;
   ctx.font = 'bold 30px Georgia, "Times New Roman", serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -916,37 +916,215 @@ document.body.appendChild(cinderTag);
 // A pier runs from the shoreline out into the lake; the boat berths alongside it
 // instead of on top of it. Local +x points away from the island, so the deck
 // starts just off the shore and the berth sits BERTH_OFFSET out from the middle.
-const PIER_DECK = { length: 8, width: 2.6, center: 2.2 };
+const PIER_DECK = { length: 8.4, width: 2.6, center: 2.1 };
+const PIER_PLATFORM = { x: 7.4, length: 2.8, width: 3.2 };
 const BERTH_OFFSET = 4.05;
 function siteToWorld(site, lx, lz) {
   const c = Math.cos(site.rotation),
     s = Math.sin(site.rotation);
   return { x: site.x + c * lx + s * lz, z: site.z - s * lx + c * lz };
 }
+// A planked deck as one mesh: planks differ only by vertex colour, so a whole
+// pier surface costs a single draw call instead of thirty.
+function plankDeckGeometry(planks) {
+  const positions = [];
+  const colors = [];
+  const indices = [];
+  const corners = [
+    [-1, -1, -1],
+    [1, -1, -1],
+    [1, -1, 1],
+    [-1, -1, 1],
+    [-1, 1, -1],
+    [1, 1, -1],
+    [1, 1, 1],
+    [-1, 1, 1]
+  ];
+  const faces = [
+    [0, 1, 2, 3],
+    [4, 5, 6, 7],
+    [0, 1, 5, 4],
+    [1, 2, 6, 5],
+    [2, 3, 7, 6],
+    [3, 0, 4, 7]
+  ];
+  for (const plank of planks) {
+    const base = positions.length / 3;
+    const color = new THREE.Color(plank.color);
+    for (const [sx, sy, sz] of corners)
+      positions.push(
+        plank.x + (sx * plank.w) / 2,
+        plank.y + (sy * plank.h) / 2,
+        plank.z + (sz * plank.d) / 2
+      );
+    for (let i = 0; i < 8; i++) colors.push(color.r, color.g, color.b);
+    for (const [a, b, c, d] of faces)
+      indices.push(base + a, base + b, base + c, base + a, base + c, base + d);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function makeDock(site) {
   const group = new THREE.Group();
   group.position.set(site.x, -0.055, site.z);
   group.rotation.y = site.rotation;
   scene.add(group);
-  const deckMat = new THREE.MeshStandardMaterial({ color: 0x645344, roughness: 0.86 });
-  const trimMat = new THREE.MeshStandardMaterial({
-    color: 0xe48c4b,
-    metalness: 0.24,
-    roughness: 0.58
+  // Ember keeps warm tarred timber; Cinder Key greyer stone-split planks.
+  const plankTones =
+    site.id === 'cinder'
+      ? [0x6d6459, 0x5e564c, 0x7a7166, 0x554e45]
+      : [0x7a6752, 0x6b5a46, 0x84705a, 0x5f5140];
+  const structureMat = new THREE.MeshStandardMaterial({ color: 0x4a3f35, roughness: 0.92 });
+  const pileMat = new THREE.MeshStandardMaterial({ color: 0x5c4b3d, roughness: 0.88 });
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0x363b40,
+    metalness: 0.55,
+    roughness: 0.5
   });
+  const ropeMat = new THREE.MeshStandardMaterial({ color: 0xc4ad82, roughness: 0.9 });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.82 });
+  const plankMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.86,
+    side: THREE.DoubleSide
+  });
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x9aa3a8, transparent: true, opacity: 0.8 });
+  const add = (mesh) => {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  };
   const cube = (w, h, d, material, x, y, z) => {
     const item = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
     item.position.set(x, y, z);
-    item.castShadow = true;
-    item.receiveShadow = true;
-    group.add(item);
-    return item;
+    return add(item);
   };
-  cube(PIER_DECK.length, 0.3, PIER_DECK.width, deckMat, PIER_DECK.center, 0.02, 0);
-  cube(2.6, 0.18, 3.1, deckMat, 7.3, -0.1, 0);
-  for (const x of [-1.5, 1.0, 3.6, 6.0, 7.8])
-    for (const z of [-1.05, 1.05]) cube(0.34, 1.15, 0.34, trimMat, x, -0.5, z);
-  for (let i = 0; i < 4; i++) cube(0.045, 0.035, 2.4, trimMat, -0.9 + i * 1.9, 0.2, 0);
+  const tube = (rTop, rBottom, h, material, x, y, z, segments = 9) => {
+    const item = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, h, segments), material);
+    item.position.set(x, y, z);
+    return add(item);
+  };
+  // Round timber pile with a proud head, plus diagonal bracing between piles.
+  const pile = (x, z, top) => {
+    tube(0.17, 0.2, 2.2, pileMat, x, top - 1.1, z);
+    tube(0.21, 0.21, 0.12, structureMat, x, top + 0.06, z);
+  };
+
+  const deckTop = 0.17;
+  const halfWidth = PIER_DECK.width / 2;
+  const pontoonTop = 0.04;
+  const deckStart = PIER_DECK.center - PIER_DECK.length / 2;
+  const deckEnd = PIER_DECK.center + PIER_DECK.length / 2;
+  cube(PIER_DECK.length, 0.2, PIER_DECK.width, structureMat, PIER_DECK.center, deckTop - 0.16, 0);
+  cube(
+    PIER_PLATFORM.length,
+    0.22,
+    PIER_PLATFORM.width,
+    structureMat,
+    PIER_PLATFORM.x,
+    pontoonTop - 0.17,
+    0
+  );
+  // Planks run across the deck; the pontoon apron carries the cargo gear.
+  const planks = [];
+  for (let x = deckStart + 0.2; x < deckEnd; x += 0.4)
+    planks.push({
+      x,
+      y: deckTop - 0.05,
+      z: 0,
+      w: 0.36,
+      h: 0.1,
+      d: PIER_DECK.width - 0.06,
+      color: plankTones[Math.abs(Math.round(x * 10)) % plankTones.length]
+    });
+  for (
+    let x = PIER_PLATFORM.x - PIER_PLATFORM.length / 2 + 0.2;
+    x < PIER_PLATFORM.x + PIER_PLATFORM.length / 2;
+    x += 0.4
+  )
+    planks.push({
+      x,
+      y: pontoonTop - 0.05,
+      z: 0,
+      w: 0.36,
+      h: 0.1,
+      d: PIER_PLATFORM.width - 0.06,
+      color: plankTones[Math.abs(Math.round(x * 7)) % plankTones.length]
+    });
+  group.add(new THREE.Mesh(plankDeckGeometry(planks), plankMat));
+  // Low kerb rails along both edges so the deck reads as a pier, not a slab.
+  for (const side of [-1, 1]) {
+    cube(
+      PIER_DECK.length,
+      0.1,
+      0.12,
+      structureMat,
+      PIER_DECK.center,
+      deckTop + 0.03,
+      side * (halfWidth - 0.06)
+    );
+    cube(
+      PIER_PLATFORM.length,
+      0.1,
+      0.12,
+      structureMat,
+      PIER_PLATFORM.x,
+      pontoonTop + 0.03,
+      side * (PIER_PLATFORM.width / 2 - 0.06)
+    );
+  }
+  cube(0.5, 0.1, 1.4, structureMat, deckEnd - 0.15, deckTop - 0.07, 0.45);
+  for (const z of [-0.95, 0.95]) {
+    for (const x of [-1.7, 0.5, 2.7, 4.9, 6.2]) pile(x, z, deckTop);
+    for (const [x0, x1] of [
+      [-1.7, 0.5],
+      [0.5, 2.7],
+      [2.7, 4.9],
+      [4.9, 6.2]
+    ]) {
+      const brace = cube(
+        Math.hypot(x1 - x0, 0.8),
+        0.06,
+        0.06,
+        structureMat,
+        (x0 + x1) / 2,
+        -0.6,
+        z
+      );
+      brace.rotation.z = Math.atan2(0.8, x1 - x0);
+    }
+  }
+  for (const z of [-1.2, 1.2]) for (const x of [6.7, 8.1]) pile(x, z, pontoonTop);
+  // Rail on the weather side only; the berth side stays clear for the boat.
+  for (const x of [-1.4, 0.0, 1.4, 2.8, 4.2, 5.6, 6.2])
+    tube(0.06, 0.07, 0.62, pileMat, x, deckTop + 0.31, -halfWidth + 0.1, 7);
+  cube(
+    PIER_DECK.length - 0.4,
+    0.07,
+    0.07,
+    structureMat,
+    PIER_DECK.center,
+    deckTop + 0.6,
+    -halfWidth + 0.1
+  );
+  cube(
+    PIER_DECK.length - 0.4,
+    0.05,
+    0.05,
+    structureMat,
+    PIER_DECK.center,
+    deckTop + 0.32,
+    -halfWidth + 0.1
+  );
+  // Two steps down to the beach at the inboard end.
+  cube(0.4, 0.16, 1.3, structureMat, deckStart - 0.15, deckTop - 0.16, 0);
+  cube(0.4, 0.16, 1.3, structureMat, deckStart - 0.5, deckTop - 0.32, 0);
   const marker = new THREE.Mesh(
     new THREE.TorusGeometry(2, 0.055, 6, 36),
     new THREE.MeshBasicMaterial({
@@ -959,13 +1137,88 @@ function makeDock(site) {
   marker.rotation.x = Math.PI / 2;
   marker.position.set(0, 0.24, BERTH_OFFSET);
   group.add(marker);
-  cube(0.8, 0.65, 0.72, trimMat, 7, 0.32, -0.85);
-  cube(0.8, 0.65, 0.72, trimMat, 7, 0.32, 0.85);
-  for (const x of [0.2, 4.6]) {
-    const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.45, 8), trimMat);
-    bollard.position.set(x, 0.4, PIER_DECK.width / 2 - 0.15);
-    group.add(bollard);
+  // Mooring furniture on the berth side: iron bollards, hanging tyres, a coil.
+  for (const x of [-0.6, 1.6, 4.4]) {
+    tube(0.12, 0.15, 0.12, ironMat, x, deckTop + 0.06, halfWidth - 0.3, 10);
+    tube(0.06, 0.07, 0.3, ironMat, x, deckTop + 0.21, halfWidth - 0.3, 10);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 7), ironMat);
+    cap.position.set(x, deckTop + 0.36, halfWidth - 0.3);
+    add(cap);
   }
+  for (const x of [0.2, 2.2, 4.2]) {
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.05, 6, 14), tireMat);
+    tire.position.set(x, -0.08, halfWidth + 0.08);
+    add(tire);
+  }
+  const ropeCoil = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.04, 6, 16), ropeMat);
+  ropeCoil.rotation.x = Math.PI / 2;
+  ropeCoil.position.set(3.0, deckTop + 0.07, halfWidth - 0.45);
+  add(ropeCoil);
+
+  // Outboard apron: hand crane, cargo stack and an oil drum.
+  const craneX = PIER_PLATFORM.x - 0.75;
+  cube(0.36, 0.34, 0.36, structureMat, craneX, pontoonTop + 0.17, -0.95);
+  tube(0.08, 0.11, 1.5, ironMat, craneX, pontoonTop + 1.0, -0.95, 8);
+  const boom = cube(1.7, 0.1, 0.12, ironMat, craneX + 0.6, pontoonTop + 1.62, -0.95);
+  boom.rotation.z = 0.34;
+  group.add(
+    new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(craneX + 1.4, pontoonTop + 1.86, -0.95),
+        new THREE.Vector3(craneX + 1.4, pontoonTop + 0.85, -0.95)
+      ]),
+      lineMat
+    )
+  );
+  const crateTones = site.id === 'cinder' ? [0x6f7d76, 0x8a7f5e] : [0xb77946, 0xc28b4d];
+  cube(
+    0.52,
+    0.44,
+    0.48,
+    new THREE.MeshStandardMaterial({ color: crateTones[0], roughness: 0.84 }),
+    PIER_PLATFORM.x + 0.3,
+    pontoonTop + 0.22,
+    0.85
+  );
+  cube(
+    0.44,
+    0.38,
+    0.42,
+    new THREE.MeshStandardMaterial({ color: crateTones[1], roughness: 0.84 }),
+    PIER_PLATFORM.x + 0.34,
+    pontoonTop + 0.61,
+    0.82
+  );
+  cube(0.04, 0.45, 0.5, ropeMat, PIER_PLATFORM.x + 0.3, pontoonTop + 0.22, 0.85);
+  tube(0.2, 0.2, 0.52, ironMat, PIER_PLATFORM.x - 0.55, pontoonTop + 0.26, 0.75, 12);
+
+  // Name board and dock lamp at the shore end.
+  const signX = deckStart + 0.35;
+  const signZ = -halfWidth + 0.28;
+  tube(0.05, 0.06, 1.15, pileMat, signX, deckTop + 0.57, signZ, 8);
+  const signMat = new THREE.MeshStandardMaterial({
+    map: namePlateTexture(site.name, '#1b2a22', '#e8f2dc'),
+    roughness: 0.62
+  });
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.3, 0.02), [
+    structureMat,
+    structureMat,
+    structureMat,
+    structureMat,
+    signMat,
+    signMat
+  ]);
+  sign.position.set(signX, deckTop + 1.06, signZ);
+  add(sign);
+  tube(0.045, 0.055, 1.85, ironMat, deckStart + 0.9, deckTop + 0.92, halfWidth - 0.35, 8);
+  cube(0.34, 0.06, 0.06, ironMat, deckStart + 0.75, deckTop + 1.8, halfWidth - 0.35);
+  cube(0.18, 0.08, 0.18, ironMat, deckStart + 0.6, deckTop + 1.74, halfWidth - 0.35);
+  const dockBulb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.055, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xfff0cf })
+  );
+  dockBulb.position.set(deckStart + 0.6, deckTop + 1.68, halfWidth - 0.35);
+  group.add(dockBulb);
   const tag = document.createElement('div');
   tag.className = 'dock-tag';
   tag.textContent = `${site.name} · VOLCANO DOCK`;
