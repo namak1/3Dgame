@@ -272,7 +272,7 @@ const dockSites=[
   {id:'cinder',name:'CINDER KEY',x:80,z:-62,rotation:-.55}
 ];
 const docks=dockSites.map(makeDock),dockById=Object.fromEntries(docks.map(d=>[d.id,d]));
-const safeZoneWidth=5;
+const safeZoneWidth=10;
 function islandClearance(x,z,cx,cz){
   const dx=x-cx,dz=z-cz;
   return Math.hypot(dx,dz)-coast(Math.atan2(dz,dx));
