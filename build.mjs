@@ -13,11 +13,14 @@ const result = await build({
   write: false,
 });
 const bundle = `<script>\n${result.outputFiles[0].text}\n</script>`;
-if (!template.includes('<!-- GAME_BUNDLE -->')) throw new Error('Bundle marker is missing from index.template.html');
+if (!template.includes('<!-- GAME_BUNDLE -->'))
+  throw new Error('Bundle marker is missing from index.template.html');
 const html = template.replace('<!-- GAME_BUNDLE -->', () => bundle);
 new Script(html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>')));
 await writeFile('index.html', html);
 await writeFile('Volcano-Island-offline.html', html);
 await mkdir('dist', { recursive: true });
 await writeFile('dist/index.html', html);
-console.log(`Built index.html, Volcano-Island-offline.html, and dist/index.html (${html.length.toLocaleString()} bytes)`);
+console.log(
+  `Built index.html, Volcano-Island-offline.html, and dist/index.html (${html.length.toLocaleString()} bytes)`,
+);
