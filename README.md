@@ -45,6 +45,16 @@ npm run check    # format check + rebuild + fail if index.html is stale
 
 CI runs `npm run check` on every push and pull request, so a source change that was never rebuilt fails the build instead of shipping a stale page.
 
+## Deploy
+
+The Worker serves generated files, so the build has to run before a deploy:
+
+```sh
+npm ci && npm run build && npx wrangler deploy
+```
+
+Point the Cloudflare build command at `npm run build` (or `npm run check`); `dist/` is not committed, so a deploy that skips the build would serve nothing.
+
 ## License
 
 The game source is MIT licensed; see `LICENSE`. Three.js is distributed under the MIT license; see `THREE-LICENSE.txt`.
