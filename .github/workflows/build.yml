@@ -15,8 +15,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run format -- --check
-      - name: Rebuild the playable page
-        run: npm run build
-      - name: Fail if the committed page is stale
-        run: git diff --exit-code -- index.html
+      - name: Check formatting, rebuild the page and fail if it is stale
+        run: npm run check
