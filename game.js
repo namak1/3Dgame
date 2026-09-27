@@ -340,7 +340,7 @@ function waterSplash(position,power=1){
 for(let i=0;i<16;i++){const mine=makeMine();mineNodes.push(mine);placeMine(mine);}
 let shipLife=100,shipLifeMax=100;
 const upgradeLevels={engine:0,steering:0,hull:0};
-let missionEnded=false,missionWon=false,hitShake=0;
+let missionEnded=false,missionWon=false,hitShake=0,sinking=false,sinkElapsed=0;
 const lifeValue=$('#shipLife'),lifeFill=$('#lifeFill'),lifeState=$('#lifeState'),hitFlash=$('#hitFlash');
 function refreshLifeHud(){
   const percent=Math.max(0,Math.min(100,Math.ceil(shipLife/shipLifeMax*100)));
@@ -355,11 +355,13 @@ function damageShip(mine,amount=null){
   if(mine){mine.group.visible=false;mine.respawnAt=gameTime+7;}
   hitFlash.classList.remove('active');void hitFlash.offsetWidth;hitFlash.classList.add('active');
   setTimeout(()=>hitFlash.classList.remove('active'),260);
-  if(cargoOnboard&&!missionEnded){cargoCondition=Math.max(0,cargoCondition-(mine?24:16));if(cargoCondition===0)failMission('CARGO DESTROYED · RUN FAILED');else refreshMissionHud();}
-  if(shipLife===0&&!missionEnded){boatVelocity=0;missionEnded=true;missionWon=false;setPaused(true);refreshMissionHud();showMissionToast('BOAT SUNK · RESTART TO TRY AGAIN');}
+  if(shipLife===0&&!missionEnded){
+    boatVelocity=0;missionEnded=true;missionWon=false;sinking=true;sinkElapsed=0;
+    boatKeys.clear();refreshMissionHud();showMissionToast('HULL BREACHED · SINKING');
+  }else if(cargoOnboard&&!missionEnded){cargoCondition=Math.max(0,cargoCondition-(mine?24:16));if(cargoCondition===0)failMission('CARGO DESTROYED · RUN FAILED');else refreshMissionHud();}
 }
 
-// Two stylized U.S. Navy carriers patrol the expanded ocean and fire when the boat closes in.
+// Two stylized U.S. Navy carriers patrol the lake and fire when the boat closes in.
 const carrierHullMat=new THREE.MeshStandardMaterial({color:0x344653,metalness:.48,roughness:.62});
 const flightDeckMat=new THREE.MeshStandardMaterial({color:0x68777d,metalness:.24,roughness:.76});
 const carrierMarkMat=new THREE.MeshBasicMaterial({color:0xe5e7dc});
@@ -413,11 +415,12 @@ function addCarrierJet(parent,x,z,heading=Math.PI){
   parent.add(jet);return jet;
 }
 const carrierPatrols=[
-  [[-91,29],[-73,-13],[-39,-32],[-7,-36],[24,-24],[-20,-24],[-61,11]],
-  [[27,37],[56,6],[93,12],[122,37],[109,72],[76,87],[44,62]]
+  [[-91,29],[-73,-13],[-39,-39],[-5,-47],[25,-42],[36,-9],[27,28],[-18,44],[-61,36]],
+  [[27,37],[56,6],[93,12],[108,38],[97,70],[76,87],[44,62]]
 ];
 function makeCarrier(index,waypoints){
-  const group=new THREE.Group();group.position.set(waypoints[0][0],0,waypoints[0][1]);scene.add(group);
+  const group=new THREE.Group();group.position.set(waypoints[0][0],0,waypoints[0][1]);
+  group.rotation.y=Math.atan2(waypoints[1][1]-waypoints[0][1],waypoints[0][0]-waypoints[1][0]);scene.add(group);
   const hull=new THREE.Mesh(carrierHullGeometry(),new THREE.MeshStandardMaterial({color:0x344653,metalness:.48,roughness:.62,side:THREE.DoubleSide}));hull.castShadow=true;hull.receiveShadow=true;group.add(hull);
   const deckPlan=[[-11,0],[-9,-3.2],[5.4,-3.55],[10.6,-2.45],[10.6,3.35],[-7.6,3.35],[-10,2.55]];
   const deck=new THREE.Mesh(carrierPrism(deckPlan,.82,1.18,.98),new THREE.MeshStandardMaterial({color:0x606e73,metalness:.2,roughness:.74,side:THREE.DoubleSide}));deck.castShadow=true;deck.receiveShadow=true;group.add(deck);
@@ -486,7 +489,7 @@ function refreshMissionHud(){
   const hud=$('#missionHud'),label=$('#missionText'),sub=$('#missionSub');
   hud.classList.toggle('complete',missionWon);hud.classList.toggle('failed',missionEnded&&!missionWon);
   if(missionWon){label.textContent='CONTRACT RUN COMPLETE';sub.textContent='All six cargo deliveries made · $5,000 bonus';return;}
-  if(missionEnded){label.textContent='VESSEL LOST · RUN FAILED';sub.textContent='Restart and try the island run again';return;}
+  if(missionEnded){label.textContent=sinking?'VESSEL SINKING':'VESSEL LOST · RUN FAILED';sub.textContent=sinking?`${Math.ceil(10-sinkElapsed)}s until restart`:'Restart and try the island run again';return;}
   const job=missionContracts[contractIndex],dock=activeDock();
   for(const site of docks){site.marker.material.color.set(site===dock?0xffd879:0xffa05f);site.marker.material.opacity=site===dock?0.88:0.62;}
   label.textContent=`DELIVERY ${contractIndex+1} / ${missionContracts.length} · ${missionPhase==='load'?'LOAD':'DISCHARGE'} ${job.cargo.toUpperCase()}`;
@@ -707,18 +710,19 @@ for(const button of document.querySelectorAll('.touch-key')){
 canvas.addEventListener('pointerdown',()=>canvas.focus({preventScroll:true}));
 let cameraFollowX=ship.position.x,cameraFollowZ=ship.position.z;
 function restartVoyage(){
-  missionEnded=false;missionWon=false;running=true;boatKeys.clear();boatVelocity=0;throttleHold=0;lastThrottle=0;
+  missionEnded=false;missionWon=false;running=true;sinking=false;sinkElapsed=0;$('#sunkModal').hidden=true;boatKeys.clear();boatVelocity=0;throttleHold=0;lastThrottle=0;
   shipLife=shipLifeMax;ship.rotation.x=ship.rotation.z=0;refreshLifeHud();
   for(const shot of carrierShots){scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();}carrierShots.length=0;
   for(const flare of flares){scene.remove(flare.mesh);scene.remove(flare.trail);flare.trail.geometry.dispose();flare.trail.material.dispose();}flares.length=0;
   for(const splash of splashObjects){scene.remove(splash.group);for(const child of splash.group.children){child.geometry?.dispose();child.material?.dispose();}}splashObjects.length=0;
-  carriers.forEach(carrier=>{carrier.group.position.set(carrier.patrolPath[0].x,0,carrier.patrolPath[0].y);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;});
+  carriers.forEach(carrier=>{const path=carrier.patrolPath;carrier.group.position.set(path[0].x,0,path[0].y);carrier.group.rotation.y=Math.atan2(path[1].y-path[0].y,path[0].x-path[1].x);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;});
   for(const shot of towerShotMeshes){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();}towerShotMeshes.length=0;
   resetMissionRoute();placeShipAtStart();cameraFollowX=ship.position.x;cameraFollowZ=ship.position.z;targetPitch=pitch=.35;targetDistance=distance=15.5;
   for(let i=0;i<pickups.length;i++){pickups[i].group.visible=false;pickups[i].tag.style.display='none';placePickup(pickups[i],i<5,carriers[i%2]);}
   setPaused(false);refreshMissionHud();updateUpgradeHud();
-  showMissionToast('CARGO RUN · LOAD AT THE HARBOR');
+  showMissionToast('CARGO RUN · LOAD AT THE ISLAND');
 }
+$('#restartAfterSinking').addEventListener('click',restartVoyage);
 let radarTimer=0;const radarCanvas=$('#radar'),radarCtx=radarCanvas.getContext('2d');
 function drawRadar(){
   const ctx=radarCtx,size=radarCanvas.width,c=size/2,radius=c-5,range=80,scale=radius/range;
@@ -750,15 +754,23 @@ function nearestCarrierWaypoint(carrier){
 }
 function steerCarrier(carrier,target,dt,speed){
   const dx=target.x-carrier.group.position.x,dz=target.y-carrier.group.position.z,distance=Math.hypot(dx,dz);
-  if(distance<.001)return distance;
-  const step=Math.min(distance,speed*dt),vx=dx/distance,vz=dz/distance;
-  carrier.group.position.x+=vx*step;carrier.group.position.z+=vz*step;
-  const aim=Math.atan2(vz,-vx),turn=Math.atan2(Math.sin(aim-carrier.group.rotation.y),Math.cos(aim-carrier.group.rotation.y));
-  carrier.group.rotation.y+=turn*Math.min(1,dt*.85);
-  return distance-step;
+  if(distance<9)return 0;
+  const aim=Math.atan2(dz,-dx);
+  const turn=Math.atan2(Math.sin(aim-carrier.group.rotation.y),Math.cos(aim-carrier.group.rotation.y));
+  carrier.group.rotation.y+=clamp(turn,-.12*dt,.12*dt);
+  const step=speed*dt*(1-.4*Math.abs(turn)/Math.PI);
+  const nextX=carrier.group.position.x-Math.cos(carrier.group.rotation.y)*step;
+  const nextZ=carrier.group.position.z+Math.sin(carrier.group.rotation.y)*step;
+  if(navigableWater(nextX,nextZ,13))carrier.group.position.set(nextX,0,nextZ);
+  return Math.hypot(target.x-carrier.group.position.x,target.y-carrier.group.position.z);
 }
 function animate(){requestAnimationFrame(animate);
   let dt=Math.min(clock.getDelta(),.05);if(!running)dt=0;gameTime+=dt;
+  if(sinking&&running){
+    sinkElapsed=Math.min(10,sinkElapsed+dt);
+    $('#missionSub').textContent=`${Math.ceil(10-sinkElapsed)}s until restart`;
+    if(sinkElapsed>=10){sinking=false;setPaused(true);refreshMissionHud();$('#sunkModal').hidden=false;$('#restartAfterSinking').focus();}
+  }
   if(running&&missionPhase==='deliver'&&!missionEnded){
     contractTimer=Math.max(0,contractTimer-dt);
     if(contractTimer===0)failMission('DELIVERY DEADLINE MISSED · RUN FAILED');
@@ -787,9 +799,11 @@ function animate(){requestAnimationFrame(animate);
     }
   }
   $('#shipSpeed').textContent=Math.abs(boatVelocity).toFixed(1);
-  ship.position.y=-.025+Math.sin(gameTime*1.25)*.025;
-  ship.rotation.z=Math.sin(gameTime*.9)*.012;
-  ship.rotation.x=Math.sin(gameTime*.75+.8)*.014;
+  const sinkProgress=shipLife===0?clamp(sinkElapsed/10,0,1):0;
+  const sinkEase=sinkProgress*sinkProgress*(3-2*sinkProgress);
+  ship.position.y=-.025+Math.sin(gameTime*1.25)*.025*(1-sinkProgress)-3.1*sinkEase;
+  ship.rotation.z=Math.sin(gameTime*.9)*.012*(1-sinkProgress)+sinkEase*.38;
+  ship.rotation.x=Math.sin(gameTime*.75+.8)*.014*(1-sinkProgress)-sinkEase*.18;
   if(running&&shipLife>0&&!missionEnded){
     const target=activeDock(),gap=Math.hypot(target.x-ship.position.x,target.z-ship.position.z),button=$('#dockAction');
     button.classList.toggle('ready',gap<12);button.setAttribute('aria-hidden',gap>=12?'true':'false');
@@ -824,7 +838,7 @@ function animate(){requestAnimationFrame(animate);
     if(running&&carrier.mode==='patrol'&&range<52&&carrier.engageCooldown<=0){carrier.mode='intercept';carrier.pursuit=7.5;carrier.engageCooldown=27;}
     if(carrier.mode==='patrol'){
       const target=carrier.patrolPath[carrier.waypoint];
-      if(steerCarrier(carrier,target,dt,carrier.patrolSpeed)<.08)carrier.waypoint=(carrier.waypoint+1)%carrier.patrolPath.length;
+      if(steerCarrier(carrier,target,dt,carrier.patrolSpeed)<9)carrier.waypoint=(carrier.waypoint+1)%carrier.patrolPath.length;
     }else if(carrier.mode==='intercept'){
       carrier.pursuit-=dt;
       const dx=ship.position.x-carrier.group.position.x,dz=ship.position.z-carrier.group.position.z,rangeNow=Math.hypot(dx,dz)||1;
@@ -833,7 +847,7 @@ function animate(){requestAnimationFrame(animate);
       if(carrier.pursuit<=0||rangeNow<15){carrier.mode='return';carrier.returnIndex=nearestCarrierWaypoint(carrier);}
     }else{
       const target=carrier.patrolPath[carrier.returnIndex];
-      if(steerCarrier(carrier,target,dt,2.25)<2.3){carrier.mode='patrol';carrier.waypoint=(carrier.returnIndex+1)%carrier.patrolPath.length;}
+      if(steerCarrier(carrier,target,dt,2.25)<9){carrier.mode='patrol';carrier.waypoint=(carrier.returnIndex+1)%carrier.patrolPath.length;}
     }
     for(const escort of carrier.escortJets){
       const phase=gameTime*.72+escort.phase+carrier.index;
@@ -861,7 +875,7 @@ function animate(){requestAnimationFrame(animate);
   }
   for(let i=towerShotMeshes.length-1;i>=0;i--){const shot=towerShotMeshes[i];shot.life-=dt;shot.mesh.material.opacity=Math.max(0,shot.life/.18);if(shot.life<=0){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();towerShotMeshes.splice(i,1);}}
   const status=$('#status');
-  const hullPercent=shipLife/shipLifeMax*100;status.textContent=!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):hullPercent<=30?'HULL CRITICAL':closestCarrierRange<18?'UNDER FIRE':closestCarrierRange<26?'CARRIER ALERT':'LIVE SIMULATION';
+  const hullPercent=shipLife/shipLifeMax*100;status.textContent=sinking?'VESSEL SINKING':!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):hullPercent<=30?'HULL CRITICAL':closestCarrierRange<18?'UNDER FIRE':closestCarrierRange<26?'CARRIER ALERT':'LIVE SIMULATION';
   status.classList.toggle('danger',running&&(hullPercent<=30||closestCarrierRange<26));
   for(let i=carrierShots.length-1;i>=0;i--){
     const shot=carrierShots[i],previous=shot.mesh.position.clone();shot.age+=dt;
