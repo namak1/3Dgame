@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 /* Volcano Island — scene source. The distributed HTML includes this code and Three.js. */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0c1226);
-scene.fog = new THREE.FogExp2(0x0c1226, 0.011);
+scene.background = new THREE.Color(0x8bb7c1);
+scene.fog = new THREE.FogExp2(0x8bb7c1, 0.008);
 
 const canvas = document.querySelector('#scene');
 canvas.tabIndex = 0;
@@ -17,7 +17,6 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 650);
 let yaw = 0.62, pitch = 0.35, distance = 15.5, targetYaw = yaw, targetPitch = pitch, targetDistance = distance;
 let running = true, eruptionPower = 0.68, elapsed = 0, nextBurst = 1.3;
-let theme = 'dusk';
 const clock = new THREE.Clock();
 const $ = (s) => document.querySelector(s);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -25,14 +24,14 @@ const clamp = THREE.MathUtils.clamp;
 eruptionPower=rand(.38,.86);nextBurst=rand(2,4.5);
 const v3 = (x,y,z) => new THREE.Vector3(x,y,z);
 
-const hemi = new THREE.HemisphereLight(0x8eb7ed, 0x422b21, 2.25); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffbd86, 3.2);
+const hemi = new THREE.HemisphereLight(0xccefff, 0x5c5246, 3.1); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffefd5, 4.5);
 sun.position.set(-8, 13, 7); sun.castShadow = true; sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.left = -12; sun.shadow.camera.right = 12;
 sun.shadow.camera.top = 12; sun.shadow.camera.bottom = -12;
 sun.shadow.bias = -0.0005; scene.add(sun);
 const fireLight = new THREE.PointLight(0xff4a14, 22, 11, 1.8); fireLight.position.set(0,3.5,0); scene.add(fireLight);
-const fill = new THREE.DirectionalLight(0x5775cc, 1.5); fill.position.set(8,5,-8); scene.add(fill);
+const fill = new THREE.DirectionalLight(0x8eb7d0, 1.5); fill.position.set(8,5,-8); scene.add(fill);
 
 function noise(x,z) {
   return Math.sin(x*2.61+Math.cos(z*1.3))*Math.cos(z*2.17)*0.45 +
@@ -40,9 +39,9 @@ function noise(x,z) {
 }
 function baseCoast(a) { return 4.95 + 0.19*Math.sin(a*5+0.3) + 0.11*Math.sin(a*9-1.2) + 0.10*Math.sin(a*13+0.6); }
 function coast(a) { return baseCoast(a)*1.6; }
-const lakeCenterZ=18;
+const lakeCenterZ=12;
 function lakeRadius(a){
-  const ellipse=1/Math.hypot(Math.cos(a)/228,Math.sin(a)/164);
+  const ellipse=1/Math.hypot(Math.cos(a)/155,Math.sin(a)/112);
   return ellipse*(1+.045*Math.sin(a*3-.5)+.025*Math.cos(a*8+1.2));
 }
 function insideLake(x,z,margin=0){const dx=x,dz=z-lakeCenterZ,a=Math.atan2(dz,dx);return Math.hypot(dx,dz)<lakeRadius(a)-margin;}
@@ -146,7 +145,7 @@ const lakeFoamPoints=[];for(let i=0;i<=360;i++){const a=i/360*Math.PI*2,r=lakeRa
 scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(lakeFoamPoints),new THREE.LineBasicMaterial({color:0xa2d4c2,transparent:true,opacity:.47})));
 
 const ocean = new THREE.Mesh(radialMesh(false,0,24),new THREE.ShaderMaterial({
-  uniforms:{uTime:{value:0},uLight:{value:new THREE.Vector3(-.55,.8,.35)},uDay:{value:0}},
+  uniforms:{uTime:{value:0},uLight:{value:new THREE.Vector3(-.55,.8,.35)},uDay:{value:1}},
   vertexShader:`varying vec3 vWorld; void main(){vec4 p=modelMatrix*vec4(position,1.);vWorld=p.xyz;gl_Position=projectionMatrix*viewMatrix*p;}`,
   fragmentShader:`uniform float uTime;uniform float uDay;varying vec3 vWorld;
     void main(){vec2 p=vWorld.xz;float w=sin(p.x*1.65+uTime*.8)*sin(p.y*1.2-uTime*.55)*.5+.5;
@@ -156,7 +155,7 @@ const ocean = new THREE.Mesh(radialMesh(false,0,24),new THREE.ShaderMaterial({
     vec3 col=mix(deep,vec3(.15,.36,.47),.18*w);
     float sheen=pow(max(0.,sin((p.x+p.y)*2.4-uTime)*.5+.5),18.)*.11;
     col+=vec3(.22,.32,.37)*sheen;
-    col=mix(col,vec3(.06,.11,.19),smoothstep(22.,110.,dist)*.75);
+    col=mix(col,vec3(.06,.18,.25),smoothstep(22.,115.,dist)*.35);
     gl_FragColor=vec4(col,1.);}`,
   side:THREE.DoubleSide
 }));
@@ -167,7 +166,7 @@ for(let i=0;i<=360;i++) {let a=i/360*Math.PI*2,r=coast(a)+.045;foamPoints.push(n
 const foam=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(foamPoints),new THREE.LineBasicMaterial({color:0x85c3bd,transparent:true,opacity:.43})); scene.add(foam);
 const outerFoam=[];
 for(let i=0;i<=360;i++){let a=i/360*Math.PI*2,r=coast(a)+.19;outerFoam.push(new THREE.Vector3(r*Math.cos(a),-.06,r*Math.sin(a)));}
-scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(outerFoam),new THREE.LineBasicMaterial({color:0x589ba3,transparent:true,opacity:.22})));
+const outerFoamLine=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(outerFoam),new THREE.LineBasicMaterial({color:0x589ba3,transparent:true,opacity:.22}));scene.add(outerFoamLine);
 
 // A bright little red-and-white fishing boat cruises just outside the island's eastern cove.
 const ship=new THREE.Group();
@@ -249,16 +248,9 @@ for(const [x,z,color] of [[.82,-.2,0xc28b4d],[1.05,.12,0x5c8872],[.65,.2,0xb7794
 }
 shipCargoCrates.visible=false;
 
-// The outer route now links two volcanic islands and two working harbors.
-const secondVolcanoSite={id:'cinder',name:'CINDER KEY',x:100,z:-100,radius:16};
-const secondVolcano=new THREE.Group();secondVolcano.position.set(secondVolcanoSite.x,0,secondVolcanoSite.z);secondVolcano.scale.setScalar(1.65);scene.add(secondVolcano);
-const cinderShore=new THREE.Mesh(new THREE.SphereGeometry(1,28,18),new THREE.MeshStandardMaterial({color:0x9a8060,roughness:.96}));cinderShore.scale.set(10,.62,8.8);cinderShore.position.y=-.02;cinderShore.receiveShadow=true;secondVolcano.add(cinderShore);
-const cinderRock=new THREE.Mesh(new THREE.ConeGeometry(6.15,7.8,13,5),new THREE.MeshStandardMaterial({color:0x3a3435,roughness:.97,flatShading:true}));cinderRock.position.y=3.65;cinderRock.scale.z=.9;cinderRock.castShadow=true;secondVolcano.add(cinderRock);
-const cinderRim=new THREE.Mesh(new THREE.TorusGeometry(.9,.18,8,32),new THREE.MeshBasicMaterial({color:0xff6333,transparent:true,opacity:.9}));cinderRim.position.y=7.15;cinderRim.rotation.x=Math.PI/2;secondVolcano.add(cinderRim);
-const cinderCrater=new THREE.Mesh(new THREE.CircleGeometry(.76,28),new THREE.MeshBasicMaterial({color:0xff5722,side:THREE.DoubleSide}));cinderCrater.position.y=7.17;cinderCrater.rotation.x=-Math.PI/2;secondVolcano.add(cinderCrater);
-const cinderGlow=new THREE.PointLight(0xff5627,5,24,2);cinderGlow.position.y=6.2;secondVolcano.add(cinderGlow);
-const cinderLavaMat=new THREE.LineBasicMaterial({color:0xff692f,transparent:true,opacity:.9});
-for(let i=0;i<3;i++){const a=i*2.1+.5,points=[new THREE.Vector3(Math.cos(a)*.55,7.1,Math.sin(a)*.55),new THREE.Vector3(Math.cos(a)*2.1,5.1,Math.sin(a)*1.9),new THREE.Vector3(Math.cos(a)*4.1,2.9,Math.sin(a)*3.7),new THREE.Vector3(Math.cos(a)*7.2,.43,Math.sin(a)*6.3)];secondVolcano.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),cinderLavaMat));}
+// Cinder will clone Ember's terrain, crater, lava flows, and trees.
+const secondVolcanoSite={id:'cinder',name:'CINDER KEY',x:72,z:-68,radius:8};
+let secondVolcano;
 const cinderTag=document.createElement('div');cinderTag.className='dock-tag';cinderTag.textContent='CINDER KEY · ACTIVE CRATER';document.body.appendChild(cinderTag);
 
 function makeDock(site){
@@ -283,10 +275,10 @@ function makeDock(site){
   return {...site,group,marker,tag};
 }
 const dockSites=[
-  {id:'khor',name:'KHOR HAVEN',kind:'PORT',x:-164,z:94,rotation:.25},
+  {id:'khor',name:'KHOR HAVEN',kind:'PORT',x:-112,z:64,rotation:.25},
   {id:'ember',name:'EMBER ISLE',kind:'VOLCANO',x:8,z:6,rotation:-.55},
-  {id:'cinder',name:'CINDER KEY',kind:'VOLCANO',x:110,z:-83,rotation:.2},
-  {id:'ras',name:'RAS SUR',kind:'PORT',x:151,z:109,rotation:-.38}
+  {id:'cinder',name:'CINDER KEY',kind:'VOLCANO',x:80,z:-62,rotation:-.55},
+  {id:'ras',name:'RAS SUR',kind:'PORT',x:103,z:75,rotation:-.38}
 ];
 const docks=dockSites.map(makeDock),dockById=Object.fromEntries(docks.map(d=>[d.id,d]));
 function navigableWater(x,z,margin=2.5){
@@ -298,7 +290,7 @@ function navigableWater(x,z,margin=2.5){
 }
 
 // Floating sea mines populate the route ahead and take 10% of hull life on impact.
-const maxBoatRadius=330;
+const maxBoatRadius=155;
 const mineNodes=[];
 const mineCoreMat=new THREE.MeshStandardMaterial({color:0x263b43,metalness:.78,roughness:.34,emissive:0x0b1718});
 const mineSpikeMat=new THREE.MeshStandardMaterial({color:0x59676a,metalness:.72,roughness:.38});
@@ -344,7 +336,7 @@ function makeBattery(x,y,z){
   const optic=new THREE.Mesh(new THREE.SphereGeometry(.12,9,7),new THREE.MeshBasicMaterial({color:0x8ff4df}));optic.position.set(.05,.42,.18);turret.add(optic);
   return {group,turret,cooldown:rand(.3,2.2),phase:rand(0,Math.PI*2)};
 }
-const batterySites=[...[-2.5,-.35,1.75].map(a=>({x:Math.cos(a)*7.35,y:landHeight(4.6,a)*1.6,z:Math.sin(a)*7.35})),...[-2.55,-.35,1.85].map(a=>({x:secondVolcanoSite.x+Math.cos(a)*13.2,y:.5,z:secondVolcanoSite.z+Math.sin(a)*11.7}))];
+const batterySites=[...[-2.5,-.35,1.75].map(a=>({x:Math.cos(a)*7.35,y:landHeight(4.6,a)*1.6,z:Math.sin(a)*7.35})),...[-2.5,-.35,1.75].map(a=>({x:secondVolcanoSite.x+Math.cos(a)*7.35,y:landHeight(4.6,a)*1.6,z:secondVolcanoSite.z+Math.sin(a)*7.35}))];
 const defenseBatteries=batterySites.map(s=>makeBattery(s.x,s.y,s.z));
 const splashObjects=[];
 function waterSplash(position,power=1){
@@ -430,8 +422,8 @@ function addCarrierJet(parent,x,z,heading=Math.PI){
   parent.add(jet);return jet;
 }
 const carrierPatrols=[
-  [[-135,42],[-108,-20],[-58,-48],[-10,-54],[35,-36],[-30,-35],[-90,16]],
-  [[40,55],[82,9],[137,17],[180,55],[160,106],[112,128],[65,91]]
+  [[-91,29],[-73,-13],[-39,-32],[-7,-36],[24,-24],[-20,-24],[-61,11]],
+  [[27,37],[56,6],[93,12],[122,37],[109,72],[76,87],[44,62]]
 ];
 function makeCarrier(index,waypoints){
   const group=new THREE.Group();group.position.set(waypoints[0][0],0,waypoints[0][1]);scene.add(group);
@@ -474,7 +466,7 @@ function makeCarrier(index,waypoints){
   const name=index===1?'USS ABRAHAM LINCOLN':'USS NIMITZ';const hullNumber=index===1?'CVN-72':'CVN-68';
   const tag=document.createElement('div');tag.className='carrier-tag';tag.textContent=`${name} · ${hullNumber}`;document.body.appendChild(tag);
   const escortJets=[0,1].map((_,i)=>{const jet=addCarrierJet(scene,0,0);jet.scale.setScalar(2.25);return {jet,phase:i*Math.PI};});
-  return {group,turrets,tag,index,name,hullNumber,escortJets,patrolPath:waypoints.map(([px,pz])=>new THREE.Vector2(px,pz)),waypoint:1,patrolSpeed:index===1?6.4:6.8,mode:'patrol',pursuit:0,returnIndex:0,cooldown:rand(.5,2.2),shotIndex:0,nextFlareAt:gameTime+40,engageCooldown:0};
+  return {group,turrets,tag,index,name,hullNumber,escortJets,patrolPath:waypoints.map(([px,pz])=>new THREE.Vector2(px,pz)),waypoint:1,patrolSpeed:index===1?1.85:2.05,mode:'patrol',pursuit:0,returnIndex:0,cooldown:rand(.5,2.2),shotIndex:0,nextFlareAt:gameTime+40,engageCooldown:0};
 }
 const carriers=carrierPatrols.map((path,i)=>makeCarrier(i+1,path));
 function placeShipAtStart(){
@@ -623,12 +615,15 @@ for(let i=0;i<125;i++) {
     crown.position.set(x,y+h*(j?.98:.68),z); crown.castShadow=true;emberVolcano.add(crown);}
 }
 
-// Distant pinpoints and drifting silhouettes help the island read in depth.
-const starPositions=[];
-for(let i=0;i<460;i++){let a=rand(0,Math.PI*2),h=rand(.1,1),r=rand(65,300);starPositions.push(Math.cos(a)*r,h*85,Math.sin(a)*r);}
-const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.Float32BufferAttribute(starPositions,3));
-const stars=new THREE.Points(starGeo,new THREE.PointsMaterial({color:0xc7d7ff,size:.13,transparent:true,opacity:.56,sizeAttenuation:true}));scene.add(stars);
-const cloudMat=new THREE.MeshBasicMaterial({color:0x74829a,transparent:true,opacity:.075,depthWrite:false});
+secondVolcano=emberVolcano.clone(true);
+secondVolcano.position.set(secondVolcanoSite.x,0,secondVolcanoSite.z);
+scene.add(secondVolcano);
+const secondFireLight=fireLight.clone();secondFireLight.position.set(secondVolcanoSite.x,5.5,secondVolcanoSite.z);scene.add(secondFireLight);
+for(const original of [foam,outerFoamLine]){
+  const copy=original.clone();copy.position.set(secondVolcanoSite.x,0,secondVolcanoSite.z);scene.add(copy);
+}
+// Low clouds drift across both islands in permanent daylight.
+const cloudMat=new THREE.MeshBasicMaterial({color:0xe9f0ec,transparent:true,opacity:.15,depthWrite:false});
 const clouds=[];
 for(let c=0;c<9;c++){const group=new THREE.Group();
   for(let i=0;i<4;i++){const ball=new THREE.Mesh(new THREE.SphereGeometry(1,9,7),cloudMat);
@@ -644,17 +639,19 @@ function addSpark(force=1) {
   if(sparks.length>240){const old=sparks.shift();scene.remove(old.mesh);}
   const mesh=new THREE.Mesh(sparkGeo,sparkMats[Math.floor(rand(0,3))].clone());
   const size=rand(.025,.092)*force;mesh.scale.setScalar(size);
-  mesh.position.set(rand(-.5,.5),rand(4.9,5.3),rand(-.5,.5));scene.add(mesh);
+  const crater=Math.random()<.5?secondVolcanoSite:null;
+  mesh.position.set((crater?.x||0)+rand(-.5,.5),rand(4.9,5.3),(crater?.z||0)+rand(-.5,.5));scene.add(mesh);
   const angle=rand(0,Math.PI*2),push=rand(.3,1.95)*force;
   sparks.push({mesh,vel:v3(Math.cos(angle)*push,rand(1.8,3.5)*force,Math.sin(angle)*push),life:rand(1.4,2.4),max:2.4});
 }
 function addSmoke() {
   if(smoke.length>48){const old=smoke.shift();scene.remove(old.mesh);old.mesh.material.dispose();}
   const mesh=new THREE.Mesh(smokeGeo,smokeMat.clone());
-  mesh.position.set(rand(-.27,.27),5.0,rand(-.27,.27));mesh.scale.setScalar(rand(.24,.41));scene.add(mesh);
+  const crater=Math.random()<.5?secondVolcanoSite:null;
+  mesh.position.set((crater?.x||0)+rand(-.27,.27),5.0,(crater?.z||0)+rand(-.27,.27));mesh.scale.setScalar(rand(.24,.41));scene.add(mesh);
   smoke.push({mesh,vel:v3(rand(-.28,.28),rand(.35,.62),rand(-.25,.25)),life:rand(3.3,5.2),max:5.2});
 }
-function burst(count=45) {for(let i=0;i<count;i++) addSpark(rand(.65,1.3));fireLight.intensity=37;}
+function burst(count=45) {for(let i=0;i<count;i++) addSpark(rand(.65,1.3));fireLight.intensity=37;secondFireLight.intensity=37;}
 
 const shockwaves=[];
 function pulse(x=0,z=0,y=4.27){
@@ -677,13 +674,6 @@ function setPaused(paused){running=!paused;$('#pause').innerHTML=running?'Ⅱ &n
 $('#pause').addEventListener('click',()=>{if(!missionEnded)setPaused(running);});
 $('#reset').addEventListener('click',()=>{const target=activeDock(),dx=target.x-ship.position.x,dz=target.z-ship.position.z;targetYaw=yaw=Math.atan2(-dx,-dz);targetPitch=pitch=.35;targetDistance=distance=15.5;});
 $('#restart').addEventListener('click',restartVoyage);
-$('#theme').addEventListener('click',()=>{
-  theme=theme==='dusk'?'day':'dusk';let day=theme==='day';
-  scene.background.set(day?0x8bb7c1:0x0c1226);scene.fog.color.set(day?0x8bb7c1:0x0c1226);
-  hemi.intensity=day?3.1:2.25;sun.intensity=day?4.5:3.2;stars.visible=!day;
-  ocean.material.uniforms.uDay.value=day?1:0;$('#theme').textContent=day?'☾ Dusk mode':'☼ Day mode';
-  document.body.classList.toggle('day',day);
-});
 let pausedBeforeShop=true;
 function openUpgradeShop(){pausedBeforeShop=running;setPaused(true);$('#upgradeModal').hidden=false;$('#upgradeNote').textContent='';updateUpgradeHud();}
 function closeUpgradeShop(){const modal=$('#upgradeModal');if(modal.hidden)return;modal.hidden=true;if(pausedBeforeShop&&!missionEnded)setPaused(false);}
@@ -773,7 +763,7 @@ function steerCarrier(carrier,target,dt,speed){
   const step=Math.min(distance,speed*dt),vx=dx/distance,vz=dz/distance;
   carrier.group.position.x+=vx*step;carrier.group.position.z+=vz*step;
   const aim=Math.atan2(vz,-vx),turn=Math.atan2(Math.sin(aim-carrier.group.rotation.y),Math.cos(aim-carrier.group.rotation.y));
-  carrier.group.rotation.y+=turn*Math.min(1,dt*1.8);
+  carrier.group.rotation.y+=turn*Math.min(1,dt*.85);
   return distance-step;
 }
 function animate(){requestAnimationFrame(animate);
@@ -848,11 +838,11 @@ function animate(){requestAnimationFrame(animate);
       carrier.pursuit-=dt;
       const dx=ship.position.x-carrier.group.position.x,dz=ship.position.z-carrier.group.position.z,rangeNow=Math.hypot(dx,dz)||1;
       const standOff=17.5,target=new THREE.Vector2(ship.position.x-dx/rangeNow*standOff,ship.position.z-dz/rangeNow*standOff);
-      steerCarrier(carrier,target,dt,4.7);
+      if(navigableWater(target.x,target.y,13))steerCarrier(carrier,target,dt,2.35);
       if(carrier.pursuit<=0||rangeNow<15){carrier.mode='return';carrier.returnIndex=nearestCarrierWaypoint(carrier);}
     }else{
       const target=carrier.patrolPath[carrier.returnIndex];
-      if(steerCarrier(carrier,target,dt,5.4)<2.3){carrier.mode='patrol';carrier.waypoint=(carrier.returnIndex+1)%carrier.patrolPath.length;}
+      if(steerCarrier(carrier,target,dt,2.25)<2.3){carrier.mode='patrol';carrier.waypoint=(carrier.returnIndex+1)%carrier.patrolPath.length;}
     }
     for(const escort of carrier.escortJets){
       const phase=gameTime*.72+escort.phase+carrier.index;
@@ -929,11 +919,12 @@ function animate(){requestAnimationFrame(animate);
     for(let i=shockwaves.length-1;i>=0;i--){let p=shockwaves[i];p.life-=step*1.3;
       p.mesh.scale.setScalar(1+(1-p.life)*3);p.mesh.material.opacity=Math.max(0,p.life)*.8;
       if(p.life<=0){scene.remove(p.mesh);p.mesh.geometry.dispose();p.mesh.material.dispose();shockwaves.splice(i,1);}}
-    ocean.material.uniforms.uTime.value=elapsed;cinderGlow.intensity=4.2+1.4*Math.sin(elapsed*2.3);cinderRim.material.opacity=.62+.27*Math.sin(elapsed*3.1+1);
+    ocean.material.uniforms.uTime.value=elapsed;
     for(const f of lavaFlows)f.mesh.material.opacity=([.76,.83,.6][f.layer])+Math.sin(elapsed*3.8-f.phase+f.layer)*.13;
     lavaInner.material.opacity=.45+Math.sin(elapsed*4)*.23;
     rim.material.opacity=.67+Math.sin(elapsed*3.2)*.2;
     fireLight.intensity+=(15+eruptionPower*19+Math.sin(elapsed*6.7)*4-fireLight.intensity)*Math.min(1,dt*4);
+    secondFireLight.intensity+=(15+eruptionPower*19+Math.sin(elapsed*6.7+1)*4-secondFireLight.intensity)*Math.min(1,dt*4);
     clouds.forEach((c,i)=>{c.position.x+=step*(.12+i*.012);if(c.position.x>23)c.position.x=-23;});
   }
   yaw+=(targetYaw-yaw)*.09;pitch+=(targetPitch-pitch)*.09;distance+=(targetDistance-distance)*.09;
@@ -952,7 +943,7 @@ function animate(){requestAnimationFrame(animate);
       carrier.tag.style.display=screen.z>-1&&screen.z<1&&Math.abs(screen.x)<1.05&&Math.abs(screen.y)<1.05?'block':'none';
     }
     for(const dock of docks){const screen=dock.group.position.clone().add(new THREE.Vector3(0,1.5,0)).project(camera);dock.tag.style.left=`${clamp((screen.x*.5+.5)*canvas.clientWidth,70,canvas.clientWidth-70)}px`;dock.tag.style.top=`${clamp((-screen.y*.5+.5)*canvas.clientHeight,46,canvas.clientHeight-40)}px`;dock.tag.style.display=screen.z>-1&&screen.z<1&&Math.abs(screen.x)<1.15&&Math.abs(screen.y)<1.15?'block':'none';}
-    const craterScreen=secondVolcano.position.clone().add(new THREE.Vector3(0,13,0)).project(camera);cinderTag.style.left=`${clamp((craterScreen.x*.5+.5)*canvas.clientWidth,88,canvas.clientWidth-88)}px`;cinderTag.style.top=`${clamp((-craterScreen.y*.5+.5)*canvas.clientHeight,45,canvas.clientHeight-45)}px`;cinderTag.style.display=craterScreen.z>-1&&craterScreen.z<1&&Math.abs(craterScreen.x)<1.1&&Math.abs(craterScreen.y)<1.1?'block':'none';
+    const craterScreen=secondVolcano.position.clone().add(new THREE.Vector3(0,7.5,0)).project(camera);cinderTag.style.left=`${clamp((craterScreen.x*.5+.5)*canvas.clientWidth,88,canvas.clientWidth-88)}px`;cinderTag.style.top=`${clamp((-craterScreen.y*.5+.5)*canvas.clientHeight,45,canvas.clientHeight-45)}px`;cinderTag.style.display=craterScreen.z>-1&&craterScreen.z<1&&Math.abs(craterScreen.x)<1.1&&Math.abs(craterScreen.y)<1.1?'block':'none';
     if(gameTime>=radarTimer){drawRadar();radarTimer=gameTime+.12;}
 }
 animate();
