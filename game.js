@@ -255,30 +255,21 @@ const cinderTag=document.createElement('div');cinderTag.className='dock-tag';cin
 
 function makeDock(site){
   const group=new THREE.Group();group.position.set(site.x,-.055,site.z);group.rotation.y=site.rotation;scene.add(group);
-  const deckMat=new THREE.MeshStandardMaterial({color:site.kind==='PORT'?0x59666a:0x645344,roughness:.86});
-  const trimMat=new THREE.MeshStandardMaterial({color:site.kind==='PORT'?0xd1b77a:0xe48c4b,metalness:.24,roughness:.58});
+  const deckMat=new THREE.MeshStandardMaterial({color:0x645344,roughness:.86});
+  const trimMat=new THREE.MeshStandardMaterial({color:0xe48c4b,metalness:.24,roughness:.58});
   const cube=(w,h,d,material,x,y,z)=>{const item=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);item.position.set(x,y,z);item.castShadow=true;item.receiveShadow=true;group.add(item);return item;};
   cube(11,.3,4,deckMat,2,.02,0);cube(7,.18,4.5,deckMat,7,-.1,0);
   for(const x of [-2.7,2.3,7.4,10])for(const z of [-1.55,1.55])cube(.34,1.05,.34,trimMat,x,-.45,z);
   for(let i=0;i<6;i++)cube(.045,.035,3.7,trimMat,-2.7+i*1.8,.2,0);
-  const marker=new THREE.Mesh(new THREE.TorusGeometry(2.25,.055,6,36),new THREE.MeshBasicMaterial({color:site.kind==='PORT'?0x71e1d0:0xffa05f,transparent:true,opacity:.88,depthWrite:false}));marker.rotation.x=Math.PI/2;marker.position.set(0,.24,0);group.add(marker);
-  if(site.kind==='PORT'){
-    const crateMats=[0x9c6846,0x688b84,0xa38655].map(color=>new THREE.MeshStandardMaterial({color,roughness:.8}));
-    for(let i=0;i<4;i++){const crate=cube(1.25,.72,.82,crateMats[i%3],5.6,.52,-2.4+i*1.52);crate.rotation.y=i%2?.08:-.06;}
-    const crane=cube(.2,4.1,.2,trimMat,7,2.22,-3.4);cube(3.9,.2,.2,trimMat,5.2,4.18,-3.4);cube(.17,1.4,.17,trimMat,3.35,3.42,-3.4);
-    for(const x of [-1,9.7]){const pole=cube(.09,3.2,.09,trimMat,x,1.75,2.3);const lamp=new THREE.PointLight(0xffcb81,.9,11,2);lamp.position.set(x,3.35,2.3);group.add(lamp);}
-  }else{
-    cube(.8,.65,.72,trimMat,5,.5,-2.35);cube(.8,.65,.72,trimMat,6,.5,-2.35);
-    for(const x of [1,7]){const bollard=new THREE.Mesh(new THREE.CylinderGeometry(.1,.14,.45,8),trimMat);bollard.position.set(x,.4,site.id==='ember'?2.15:-2.15);group.add(bollard);}
-  }
-  const tag=document.createElement('div');tag.className='dock-tag';tag.textContent=`${site.name} · ${site.kind==='PORT'?'PORT':'VOLCANO DOCK'}`;document.body.appendChild(tag);
+  const marker=new THREE.Mesh(new THREE.TorusGeometry(2.25,.055,6,36),new THREE.MeshBasicMaterial({color:0xffa05f,transparent:true,opacity:.88,depthWrite:false}));marker.rotation.x=Math.PI/2;marker.position.set(0,.24,0);group.add(marker);
+  cube(.8,.65,.72,trimMat,5,.5,-2.35);cube(.8,.65,.72,trimMat,6,.5,-2.35);
+  for(const x of [1,7]){const bollard=new THREE.Mesh(new THREE.CylinderGeometry(.1,.14,.45,8),trimMat);bollard.position.set(x,.4,site.id==='ember'?2.15:-2.15);group.add(bollard);}
+  const tag=document.createElement('div');tag.className='dock-tag';tag.textContent=`${site.name} · VOLCANO DOCK`;document.body.appendChild(tag);
   return {...site,group,marker,tag};
 }
 const dockSites=[
-  {id:'khor',name:'KHOR HAVEN',kind:'PORT',x:-112,z:64,rotation:.25},
-  {id:'ember',name:'EMBER ISLE',kind:'VOLCANO',x:8,z:6,rotation:-.55},
-  {id:'cinder',name:'CINDER KEY',kind:'VOLCANO',x:80,z:-62,rotation:-.55},
-  {id:'ras',name:'RAS SUR',kind:'PORT',x:103,z:75,rotation:-.38}
+  {id:'ember',name:'EMBER ISLE',x:8,z:6,rotation:-.55},
+  {id:'cinder',name:'CINDER KEY',x:80,z:-62,rotation:-.55}
 ];
 const docks=dockSites.map(makeDock),dockById=Object.fromEntries(docks.map(d=>[d.id,d]));
 function navigableWater(x,z,margin=2.5){
@@ -470,8 +461,8 @@ function makeCarrier(index,waypoints){
 }
 const carriers=carrierPatrols.map((path,i)=>makeCarrier(i+1,path));
 function placeShipAtStart(){
-  const startSite=dockById[missionContracts[0]?.from||'khor'],nextSite=dockById[missionContracts[0]?.to||'ember'];
-  const dx=nextSite.x-startSite.x,dz=nextSite.z-startSite.z,length=Math.hypot(dx,dz)||1;
+  const startSite=dockById[missionContracts[0]?.from||'ember'],nextSite=dockById[missionContracts[0]?.to||'cinder'];
+  const dx=nextSite.x-startSite.x,dz=nextSite.z-startSite.z;
   const side=3.4,offsetX=-Math.sin(startSite.rotation)*side,offsetZ=Math.cos(startSite.rotation)*side;
   ship.position.set(startSite.x+offsetX,-.025,startSite.z+offsetZ);
   ship.rotation.y=Math.atan2(dz,-dx);
@@ -479,12 +470,12 @@ function placeShipAtStart(){
 }
 
 const cargoTemplates=[
-  {from:'khor',to:'ember',cargo:'Lava pump seals',reward:1200},
+  {from:'ember',to:'cinder',cargo:'Lava pump seals',reward:1200},
+  {from:'cinder',to:'ember',cargo:'Crater samples',reward:1650},
   {from:'ember',to:'cinder',cargo:'Obsidian glass',reward:1800},
-  {from:'cinder',to:'ras',cargo:'Crater samples',reward:1650},
-  {from:'ras',to:'ember',cargo:'Emergency provisions',reward:1900},
-  {from:'ember',to:'khor',cargo:'Volcanic cores',reward:2200},
-  {from:'khor',to:'ras',cargo:'Survey equipment',reward:2700}
+  {from:'cinder',to:'ember',cargo:'Emergency provisions',reward:1900},
+  {from:'ember',to:'cinder',cargo:'Volcanic cores',reward:2200},
+  {from:'cinder',to:'ember',cargo:'Survey equipment',reward:2700}
 ];
 let missionContracts=[],contractIndex=0,missionPhase='load',cargoOnboard=null,dockHold=0,contractTimer=0,cargoCondition=100;
 function activeDock(){
@@ -495,8 +486,9 @@ function refreshMissionHud(){
   const hud=$('#missionHud'),label=$('#missionText'),sub=$('#missionSub');
   hud.classList.toggle('complete',missionWon);hud.classList.toggle('failed',missionEnded&&!missionWon);
   if(missionWon){label.textContent='CONTRACT RUN COMPLETE';sub.textContent='All six cargo deliveries made · $5,000 bonus';return;}
-  if(missionEnded){label.textContent='VESSEL LOST · RUN FAILED';sub.textContent='Restart and try a different harbor route';return;}
+  if(missionEnded){label.textContent='VESSEL LOST · RUN FAILED';sub.textContent='Restart and try the island run again';return;}
   const job=missionContracts[contractIndex],dock=activeDock();
+  for(const site of docks){site.marker.material.color.set(site===dock?0xffd879:0xffa05f);site.marker.material.opacity=site===dock?0.88:0.62;}
   label.textContent=`DELIVERY ${contractIndex+1} / ${missionContracts.length} · ${missionPhase==='load'?'LOAD':'DISCHARGE'} ${job.cargo.toUpperCase()}`;
   sub.textContent=missionPhase==='load'
     ? `${dock.name} → ${dockById[job.to].name} · $${job.reward.toLocaleString('en-US')} · stop within 3.5m and hold E`
@@ -507,13 +499,12 @@ function failMission(message){missionEnded=true;missionWon=false;boatVelocity=0;
 function resetMissionRoute(){
   missionEnded=false;missionWon=false;contractIndex=0;missionPhase='load';cargoOnboard=null;dockHold=0;contractTimer=0;cargoCondition=100;shipCargoCrates.visible=false;
   const reverse=Math.random()<.5;
-  missionContracts=reverse?[...cargoTemplates].reverse().map((job,i)=>({from:job.to,to:job.from,cargo:['Port spares','Thermal sensors','Medical supplies','Survey cores','Black-glass cargo','Volcanic pump kit'][i],reward:job.reward})):cargoTemplates.map(job=>({...job}));
-  for(const dock of docks){dock.marker.material.color.set(dock.kind==='PORT'?0x71e1d0:0xffa05f);dock.marker.material.opacity=.74;}
-  docks[0].marker.material.color.set(0xffd879);refreshMissionHud();
+  missionContracts=reverse?cargoTemplates.map(job=>({from:job.to,to:job.from,cargo:job.cargo,reward:job.reward})):cargoTemplates.map(job=>({...job}));
+  refreshMissionHud();
 }
 function finishMission(){
   missionEnded=true;missionWon=true;money+=5000;updateUpgradeHud();
-  setPaused(true);refreshMissionHud();showMissionToast('ALL FOUR DELIVERIES COMPLETE · +$5,000');
+  setPaused(true);refreshMissionHud();showMissionToast('ALL SIX DELIVERIES COMPLETE · +$5,000');
 }
 function completeDockAction(){
   const job=missionContracts[contractIndex],dock=activeDock();dockHold=0;
@@ -746,7 +737,7 @@ function drawRadar(){
   for(const carrier of carriers){const point=mapPoint(carrier.group.position.x,carrier.group.position.z,'#75caff',4,true);if(point){ctx.strokeStyle='#d6f4ff';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(point.x,point.y-3);ctx.lineTo(point.x+3,point.y+3);ctx.lineTo(point.x-3,point.y+3);ctx.closePath();ctx.stroke();ctx.fillStyle='#d8f4ff';ctx.font='7px system-ui';ctx.fillText(carrier.index===1?'72':'68',point.x+4,point.y-3);}}
   for(const mine of mineNodes)if(mine.group.visible)mapPoint(mine.group.position.x,mine.group.position.z,'#ff7960',2.15);
   for(const pickup of pickups)if(pickup.available)mapPoint(pickup.group.position.x,pickup.group.position.z,pickup.type==='cash'?'#ffd46f':'#8be0a2',3);
-  for(const dock of docks)mapPoint(dock.x,dock.z,dock.kind==='PORT'?'#f2c46d':'#ff9a62',2.3);
+  for(const dock of docks)mapPoint(dock.x,dock.z,'#ff9a62',2.3);
   {const goal=activeDock(),point=mapPoint(goal.x,goal.z,'#c9afff',4,true);if(point&&point.distance>range){const angle=Math.atan2(point.dz,point.dx);ctx.save();ctx.translate(point.x,point.y);ctx.rotate(angle);ctx.fillStyle='#c9afff';ctx.beginPath();ctx.moveTo(6,0);ctx.lineTo(-4,-4);ctx.lineTo(-4,4);ctx.closePath();ctx.fill();ctx.restore();}else if(point){ctx.strokeStyle='#c9afff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(point.x,point.y,5,0,Math.PI*2);ctx.stroke();}}
   const headingX=-Math.cos(ship.rotation.y),headingZ=Math.sin(ship.rotation.y);ctx.strokeStyle='#83f1d8';ctx.lineWidth=2.2;ctx.beginPath();ctx.moveTo(c-headingX*3,c-headingZ*3);ctx.lineTo(c+headingX*9,c+headingZ*9);ctx.stroke();ctx.fillStyle='#ecfff7';ctx.beginPath();ctx.arc(c,c,3,0,Math.PI*2);ctx.fill();
   ctx.restore();ctx.strokeStyle='rgba(180,228,229,.38)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(c,c,radius,0,Math.PI*2);ctx.stroke();
