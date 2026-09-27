@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const template = await readFile('index.template.html', 'utf8');
 const result = await build({
@@ -16,4 +16,6 @@ if (!template.includes('<!-- GAME_BUNDLE -->')) throw new Error('Bundle marker i
 const html = template.replace('<!-- GAME_BUNDLE -->', bundle);
 await writeFile('index.html', html);
 await writeFile('Volcano-Island-offline.html', html);
-console.log(`Built index.html and Volcano-Island-offline.html (${html.length.toLocaleString()} bytes)`);
+await mkdir('dist', { recursive: true });
+await writeFile('dist/index.html', html);
+console.log(`Built index.html, Volcano-Island-offline.html, and dist/index.html (${html.length.toLocaleString()} bytes)`);
