@@ -481,7 +481,7 @@ function makeCarrier(index,waypoints){
   const wakeCore=new THREE.Mesh(new THREE.BoxGeometry(4.8,.024,.2),wakeMat.clone());wakeCore.position.set(-13.4,-.063,0);group.add(wakeCore);
   const name=index===1?'USS ABRAHAM LINCOLN':'USS NIMITZ';const hullNumber=index===1?'CVN-72':'CVN-68';
   const tag=document.createElement('div');tag.className='carrier-tag';tag.textContent=`${name} · ${hullNumber}`;document.body.appendChild(tag);
-  const escortJets=[0,1].map((_,i)=>{const jet=addCarrierJet(scene,0,0);jet.scale.setScalar(2.25);return {jet,phase:i*Math.PI,cooldown:rand(.2,1.1)};});
+  const escortJets=[0,1].map((_,i)=>{const jet=addCarrierJet(scene,0,0);jet.scale.setScalar(2.25);return {jet,phase:i*Math.PI,cooldown:rand(.2,1.1),burstRemaining:0};});
   return {group,turrets,tag,index,name,hullNumber,escortJets,patrolPath:waypoints.map(([px,pz])=>new THREE.Vector2(px,pz)),waypoint:1,patrolSpeed:index===1?1.85:2.05,mode:'patrol',pursuit:0,returnIndex:0,cooldown:rand(.5,2.2),shotIndex:0,nextFlareAt:gameTime+40,engageCooldown:0};
 }
 const carriers=carrierPatrols.map((path,i)=>makeCarrier(i+1,path));
@@ -556,7 +556,7 @@ const shotMat=new THREE.MeshBasicMaterial({color:0xffc65d});
 const shotTrailMat=new THREE.LineBasicMaterial({color:0xff7141,transparent:true,opacity:.9});
 const jetShotGeo=new THREE.SphereGeometry(.12,8,7);
 const jetShotMat=new THREE.MeshBasicMaterial({color:0xffe4a6});
-const jetTrailMat=new THREE.LineBasicMaterial({color:0xff955d,transparent:true,opacity:.88});
+const jetTrailMat=new THREE.LineBasicMaterial({color:0xffd27b,transparent:true,opacity:.95});
 function fireCarrierShot(carrier,turret){
   carrier.group.updateMatrixWorld(true);
   const start=turret.localToWorld(new THREE.Vector3(-1.1,.32,0));
@@ -749,7 +749,7 @@ function restartVoyage(){
   for(const shot of [...carrierShots,...jetShots]){scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();}carrierShots.length=0;jetShots.length=0;
   for(const flare of flares){scene.remove(flare.mesh);scene.remove(flare.trail);flare.trail.geometry.dispose();flare.trail.material.dispose();}flares.length=0;
   for(const splash of splashObjects){scene.remove(splash.group);for(const child of splash.group.children){child.geometry?.dispose();child.material?.dispose();}}splashObjects.length=0;
-  carriers.forEach(carrier=>{const path=carrier.patrolPath;carrier.group.position.set(path[0].x,0,path[0].y);carrier.group.rotation.y=Math.atan2(path[1].y-path[0].y,path[0].x-path[1].x);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;for(const escort of carrier.escortJets)escort.cooldown=rand(.2,1.1);});
+  carriers.forEach(carrier=>{const path=carrier.patrolPath;carrier.group.position.set(path[0].x,0,path[0].y);carrier.group.rotation.y=Math.atan2(path[1].y-path[0].y,path[0].x-path[1].x);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;for(const escort of carrier.escortJets){escort.cooldown=rand(.2,1.1);escort.burstRemaining=0;}});
   for(const shot of towerShotMeshes){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();}towerShotMeshes.length=0;
   resetMissionRoute();placeShipAtStart();cameraFollowX=ship.position.x;cameraFollowZ=ship.position.z;targetPitch=pitch=.35;targetDistance=distance=15.5;
   for(let i=0;i<pickups.length;i++){pickups[i].group.visible=false;pickups[i].tag.style.display='none';placePickup(pickups[i],i<5,carriers[i%2]);}
@@ -762,6 +762,32 @@ function drawRadar(){
   const ctx=radarCtx,size=radarCanvas.width,c=size/2,radius=c-5,range=80,scale=radius/range;
   ctx.clearRect(0,0,size,size);ctx.save();ctx.beginPath();ctx.arc(c,c,radius,0,Math.PI*2);ctx.clip();
   ctx.fillStyle='rgba(5,17,27,.96)';ctx.fillRect(0,0,size,size);
+  ctx.fillStyle='#455d4d';ctx.beginPath();ctx.rect(0,0,size,size);
+  for(let i=0;i<=240;i++){
+    const a=i/240*Math.PI*2,r=lakeRadius(a);
+    const x=c+(r*Math.cos(a)-ship.position.x)*scale;
+    const y=c+(lakeCenterZ+r*Math.sin(a)-ship.position.z)*scale;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  }
+  ctx.closePath();ctx.fill('evenodd');
+  ctx.strokeStyle='#98b9a1';ctx.lineWidth=1.4;ctx.beginPath();
+  for(let i=0;i<=240;i++){
+    const a=i/240*Math.PI*2,r=lakeRadius(a);
+    const x=c+(r*Math.cos(a)-ship.position.x)*scale;
+    const y=c+(lakeCenterZ+r*Math.sin(a)-ship.position.z)*scale;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  }
+  ctx.closePath();ctx.stroke();
+  for(const [cx,cz] of [[0,0],[secondVolcanoSite.x,secondVolcanoSite.z]]){
+    ctx.beginPath();
+    for(let i=0;i<=96;i++){
+      const a=i/96*Math.PI*2,r=coast(a);
+      const x=c+(cx+r*Math.cos(a)-ship.position.x)*scale;
+      const y=c+(cz+r*Math.sin(a)-ship.position.z)*scale;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.closePath();ctx.fillStyle='#66815f';ctx.fill();ctx.strokeStyle='#c3d89a';ctx.lineWidth=1.5;ctx.stroke();
+  }
   ctx.strokeStyle='rgba(141,190,198,.18)';ctx.lineWidth=1;
   for(const unit of [20,40,60,80]){ctx.beginPath();ctx.arc(c,c,unit*scale,0,Math.PI*2);ctx.stroke();}
   ctx.beginPath();ctx.moveTo(c-radius,c);ctx.lineTo(c+radius,c);ctx.moveTo(c,c-radius);ctx.lineTo(c,c+radius);ctx.stroke();
@@ -771,7 +797,8 @@ function drawRadar(){
     if(edge&&distance>range){dx=dx/distance*range;dz=dz/distance*range;}
     const px=c+dx*scale,py=c+dz*scale;ctx.fillStyle=color;ctx.beginPath();ctx.arc(px,py,pointSize,0,Math.PI*2);ctx.fill();return {x:px,y:py,dx,dz,distance};
   }
-  mapPoint(0,0,'#ff8358',4);
+  mapPoint(0,0,'#ff8358',3);
+  mapPoint(secondVolcanoSite.x,secondVolcanoSite.z,'#ff8358',3);
   for(const carrier of carriers){const point=mapPoint(carrier.group.position.x,carrier.group.position.z,'#75caff',4,true);if(point){ctx.strokeStyle='#d6f4ff';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(point.x,point.y-3);ctx.lineTo(point.x+3,point.y+3);ctx.lineTo(point.x-3,point.y+3);ctx.closePath();ctx.stroke();ctx.fillStyle='#d8f4ff';ctx.font='7px system-ui';ctx.fillText(carrier.index===1?'72':'68',point.x+4,point.y-3);}}
   for(const mine of mineNodes)if(mine.group.visible)mapPoint(mine.group.position.x,mine.group.position.z,'#ff7960',2.15);
   for(const pickup of pickups)if(pickup.available)mapPoint(pickup.group.position.x,pickup.group.position.z,pickup.type==='cash'?'#ffd46f':'#8be0a2',3);
@@ -894,7 +921,14 @@ function animate(){requestAnimationFrame(animate);
       escort.jet.rotation.z=.12*Math.sin(phase);
       escort.cooldown=Math.max(0,escort.cooldown-dt);
       const jetRange=Math.hypot(x-ship.position.x,z-ship.position.z);
-      if(jetRange<=30&&!shipSafe){aircraftInRange=true;if(running&&!missionEnded&&shipLife>0&&escort.cooldown<=0){fireJetShot(escort);escort.cooldown=1.35;}}
+      if(jetRange<=30&&!shipSafe){
+        aircraftInRange=true;
+        if(running&&!missionEnded&&shipLife>0&&escort.cooldown<=0){
+          if(escort.burstRemaining===0)escort.burstRemaining=4;
+          fireJetShot(escort);escort.burstRemaining--;
+          escort.cooldown=escort.burstRemaining>0?0.11:rand(1.8,2.4);
+        }
+      }else if(escort.burstRemaining){escort.burstRemaining=0;escort.cooldown=Math.max(escort.cooldown,.8);}
     }
     if(running&&gameTime>=carrier.nextFlareAt){launchFlare(carrier);carrier.nextFlareAt+=40;}
     const currentRange=Math.hypot(carrier.group.position.x-ship.position.x,carrier.group.position.z-ship.position.z);
@@ -926,10 +960,12 @@ function animate(){requestAnimationFrame(animate);
       scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.material.dispose();carrierShots.splice(i,1);}
   }
   for(let i=jetShots.length-1;i>=0;i--){
-    const shot=jetShots[i],previous=shot.mesh.position.clone();shot.age+=dt;
+    const shot=jetShots[i];shot.age+=dt;
     const t=clamp(shot.age/shot.duration,0,1);
     shot.mesh.position.lerpVectors(shot.start,shot.target,t);
-    shot.trail.geometry.dispose();shot.trail.geometry=new THREE.BufferGeometry().setFromPoints([previous,shot.mesh.position]);
+    const travel=shot.start.distanceTo(shot.target);
+    const tail=shot.start.clone().lerp(shot.target,Math.max(0,t-4/travel));
+    shot.trail.geometry.dispose();shot.trail.geometry=new THREE.BufferGeometry().setFromPoints([tail,shot.mesh.position]);
     if(t>=1&&running){
       if(!shipSafe&&!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8)damageShip(null,shipLifeMax*.01);
       scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();jetShots.splice(i,1);
