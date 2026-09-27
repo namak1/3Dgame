@@ -333,6 +333,13 @@ function placeMine(mine){
 }
 let gameTime=0;
 const towerShotMeshes=[];
+const flakBursts=[];
+function showFlakBurst(position){
+  const group=new THREE.Group();group.position.copy(position);scene.add(group);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.42,.075,6,20),new THREE.MeshBasicMaterial({color:0xffe6a4,transparent:true,opacity:.9,depthWrite:false}));group.add(ring);
+  const flash=new THREE.Mesh(new THREE.SphereGeometry(.25,8,6),new THREE.MeshBasicMaterial({color:0xb8fff2,transparent:true,opacity:.95,depthWrite:false}));group.add(flash);
+  flakBursts.push({group,ring,flash,age:0,life:.55});
+}
 const towerMetal=new THREE.MeshStandardMaterial({color:0x51636a,metalness:.58,roughness:.48});
 const towerBaseMat=new THREE.MeshStandardMaterial({color:0x756b58,roughness:.88});
 function makeBattery(x,y,z){
@@ -751,6 +758,7 @@ function restartVoyage(){
   for(const splash of splashObjects){scene.remove(splash.group);for(const child of splash.group.children){child.geometry?.dispose();child.material?.dispose();}}splashObjects.length=0;
   carriers.forEach(carrier=>{const path=carrier.patrolPath;carrier.group.position.set(path[0].x,0,path[0].y);carrier.group.rotation.y=Math.atan2(path[1].y-path[0].y,path[0].x-path[1].x);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;for(const escort of carrier.escortJets){escort.cooldown=rand(.2,1.1);escort.burstRemaining=0;}});
   for(const shot of towerShotMeshes){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();}towerShotMeshes.length=0;
+  for(const burst of flakBursts){scene.remove(burst.group);for(const mesh of burst.group.children){mesh.geometry.dispose();mesh.material.dispose();}}flakBursts.length=0;
   resetMissionRoute();placeShipAtStart();cameraFollowX=ship.position.x;cameraFollowZ=ship.position.z;targetPitch=pitch=.35;targetDistance=distance=15.5;
   for(let i=0;i<pickups.length;i++){pickups[i].group.visible=false;pickups[i].tag.style.display='none';placePickup(pickups[i],i<5,carriers[i%2]);}
   setPaused(false);refreshMissionHud();updateUpgradeHud();
@@ -941,12 +949,24 @@ function animate(){requestAnimationFrame(animate);
     }
   }
   for(const battery of defenseBatteries){
-    battery.cooldown-=dt;const target=mineNodes.filter(m=>m.group.visible).map(m=>({mine:m,d:Math.hypot(m.group.position.x-battery.group.position.x,m.group.position.z-battery.group.position.z)})).filter(v=>v.d<21).sort((a,b)=>a.d-b.d)[0];
-    if(target){const dx=target.mine.group.position.x-battery.group.position.x,dz=target.mine.group.position.z-battery.group.position.z;battery.turret.rotation.y=Math.atan2(-dz,dx);
-      if(running&&battery.cooldown<=0){const start=battery.group.localToWorld(new THREE.Vector3(.6,1.95,0)),end=target.mine.group.position.clone().add(new THREE.Vector3(0,.15,0));const beam=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0x9ff8e8,transparent:true,opacity:.9,depthWrite:false}));scene.add(beam);towerShotMeshes.push({mesh:beam,life:.18});target.mine.group.visible=false;target.mine.respawnAt=gameTime+rand(6,10);battery.cooldown=4.2;}
+    battery.cooldown-=dt;
+    const planeTarget=carriers.flatMap(carrier=>carrier.escortJets).map(escort=>({escort,d:Math.hypot(escort.jet.position.x-battery.group.position.x,escort.jet.position.z-battery.group.position.z)})).filter(v=>v.d<35).sort((a,b)=>a.d-b.d)[0];
+    const mineTarget=planeTarget?null:mineNodes.filter(m=>m.group.visible).map(m=>({mine:m,d:Math.hypot(m.group.position.x-battery.group.position.x,m.group.position.z-battery.group.position.z)})).filter(v=>v.d<21).sort((a,b)=>a.d-b.d)[0];
+    const targetPosition=planeTarget?.escort.jet.position||mineTarget?.mine.group.position;
+    if(targetPosition){const dx=targetPosition.x-battery.group.position.x,dz=targetPosition.z-battery.group.position.z;battery.turret.rotation.y=Math.atan2(-dz,dx);
+      if(running&&battery.cooldown<=0){
+        battery.group.updateMatrixWorld(true);
+        const start=battery.turret.localToWorld(new THREE.Vector3(.7,.17,0));
+        const end=planeTarget?targetPosition.clone():targetPosition.clone().add(new THREE.Vector3(0,.15,0));
+        const beam=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:planeTarget?0xffe6a4:0x9ff8e8,transparent:true,opacity:.95,depthWrite:false}));scene.add(beam);
+        towerShotMeshes.push({mesh:beam,life:planeTarget?0.28:0.18,maxLife:planeTarget?0.28:0.18});
+        if(planeTarget){showFlakBurst(end);battery.cooldown=.85;}
+        else {mineTarget.mine.group.visible=false;mineTarget.mine.respawnAt=gameTime+rand(6,10);battery.cooldown=4.2;}
+      }
     }
   }
-  for(let i=towerShotMeshes.length-1;i>=0;i--){const shot=towerShotMeshes[i];shot.life-=dt;shot.mesh.material.opacity=Math.max(0,shot.life/.18);if(shot.life<=0){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();towerShotMeshes.splice(i,1);}}
+  for(let i=towerShotMeshes.length-1;i>=0;i--){const shot=towerShotMeshes[i];shot.life-=dt;shot.mesh.material.opacity=Math.max(0,shot.life/shot.maxLife);if(shot.life<=0){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();towerShotMeshes.splice(i,1);}}
+  for(let i=flakBursts.length-1;i>=0;i--){const burst=flakBursts[i];burst.age+=dt;const t=Math.min(1,burst.age/burst.life);burst.ring.scale.setScalar(1+t*2.8);burst.ring.material.opacity=(1-t)*.9;burst.flash.scale.setScalar(1+t*1.5);burst.flash.material.opacity=(1-t)*.95;if(t>=1){scene.remove(burst.group);for(const mesh of burst.group.children){mesh.geometry.dispose();mesh.material.dispose();}flakBursts.splice(i,1);}}
   const status=$('#status');
   const hullPercent=shipLife/shipLifeMax*100;status.textContent=sinking?'VESSEL SINKING':!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):shipSafe?'ISLAND SAFE ZONE':hullPercent<=30?'HULL CRITICAL':aircraftInRange?'AIRCRAFT ATTACK':closestCarrierRange<43?'UNDER FIRE':closestCarrierRange<52?'CARRIER ALERT':'LIVE SIMULATION';
   status.classList.toggle('danger',running&&!shipSafe&&(hullPercent<=30||aircraftInRange||closestCarrierRange<43));
