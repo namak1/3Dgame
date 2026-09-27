@@ -1,0 +1,7 @@
+# index.html is a generated build artifact.
+# index.template.html keeps its CSS minified on purpose: the styles ship verbatim
+# inside the single-file build, so formatting them would bloat the release.
+index.html
+index.template.html
+Volcano-Island-offline.html
+dist/

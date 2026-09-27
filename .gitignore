@@ -1,0 +1,10 @@
+# Build output. `npm run build` regenerates all of these from game.js.
+dist/
+Volcano-Island-offline.html
+
+# Tooling
+node_modules/
+package-lock.json.bak
+
+# macOS
+.DS_Store
