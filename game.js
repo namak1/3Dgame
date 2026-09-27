@@ -272,11 +272,30 @@ const dockSites=[
   {id:'cinder',name:'CINDER KEY',x:80,z:-62,rotation:-.55}
 ];
 const docks=dockSites.map(makeDock),dockById=Object.fromEntries(docks.map(d=>[d.id,d]));
+const safeZoneWidth=5;
+function islandClearance(x,z,cx,cz){
+  const dx=x-cx,dz=z-cz;
+  return Math.hypot(dx,dz)-coast(Math.atan2(dz,dx));
+}
+function isIslandSafeZone(x,z,extra=0){
+  return islandClearance(x,z,0,0)<=safeZoneWidth+extra||
+    islandClearance(x,z,secondVolcanoSite.x,secondVolcanoSite.z)<=safeZoneWidth+extra;
+}
+function addSafeZoneRing(cx,cz){
+  const points=[];
+  for(let i=0;i<=360;i++){
+    const a=i/360*Math.PI*2,r=coast(a)+safeZoneWidth;
+    points.push(new THREE.Vector3(cx+r*Math.cos(a),-.04,cz+r*Math.sin(a)));
+  }
+  const ring=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineDashedMaterial({color:0x82f5cf,dashSize:.75,gapSize:.45,transparent:true,opacity:.72,depthWrite:false}));
+  ring.computeLineDistances();scene.add(ring);
+}
+addSafeZoneRing(0,0);
+addSafeZoneRing(secondVolcanoSite.x,secondVolcanoSite.z);
 function navigableWater(x,z,margin=2.5){
   if(!insideLake(x,z,margin))return false;
-  const radius=Math.hypot(x,z),angle=Math.atan2(z,x);
-  if(radius<coast(angle)+margin)return false;
-  if(Math.hypot(x-secondVolcanoSite.x,z-secondVolcanoSite.z)<secondVolcanoSite.radius+margin)return false;
+  if(islandClearance(x,z,0,0)<margin)return false;
+  if(islandClearance(x,z,secondVolcanoSite.x,secondVolcanoSite.z)<margin)return false;
   return true;
 }
 
@@ -308,9 +327,9 @@ function placeMine(mine){
     if(Math.random()<.78){const ahead=rand(13,43),side=rand(-30,30);x=ship.position.x+hx*ahead+sideX*side;z=ship.position.z+hz*ahead+sideZ*side;}
     else {const a=rand(0,Math.PI*2),r=rand(8,Math.min(55,maxBoatRadius-8));x=r*Math.cos(a);z=r*Math.sin(a);}
     const radius=Math.hypot(x,z),angle=Math.atan2(z,x);
-    if(navigableWater(x,z,2.4)&&radius<maxBoatRadius-3&&Math.hypot(x-ship.position.x,z-ship.position.z)>7){mine.group.position.set(x,-.035,z);mine.group.visible=true;mine.phase=rand(0,Math.PI*2);mine.respawnAt=0;const drift=rand(.18,.52),direction=rand(0,Math.PI*2);mine.vx=Math.cos(direction)*drift;mine.vz=Math.sin(direction)*drift;mine.nextTurn=gameTime+rand(2,5);return;}
+    if(navigableWater(x,z,2.4)&&!isIslandSafeZone(x,z,.6)&&radius<maxBoatRadius-3&&Math.hypot(x-ship.position.x,z-ship.position.z)>7){mine.group.position.set(x,-.035,z);mine.group.visible=true;mine.phase=rand(0,Math.PI*2);mine.respawnAt=0;const drift=rand(.18,.52),direction=rand(0,Math.PI*2);mine.vx=Math.cos(direction)*drift;mine.vz=Math.sin(direction)*drift;mine.nextTurn=gameTime+rand(2,5);return;}
   }
-  mine.group.position.set(ship.position.x+hx*20,-.035,ship.position.z+hz*20);mine.group.visible=navigableWater(mine.group.position.x,mine.group.position.z,2.4);mine.respawnAt=gameTime+2;mine.vx=hx*.25;mine.vz=hz*.25;mine.nextTurn=gameTime+rand(2,5);
+  mine.group.position.set(ship.position.x+hx*20,-.035,ship.position.z+hz*20);mine.group.visible=navigableWater(mine.group.position.x,mine.group.position.z,2.4)&&!isIslandSafeZone(mine.group.position.x,mine.group.position.z,.6);mine.respawnAt=mine.group.visible?0:gameTime+2;mine.vx=hx*.25;mine.vz=hz*.25;mine.nextTurn=gameTime+rand(2,5);
 }
 let gameTime=0;
 const towerShotMeshes=[];
@@ -349,6 +368,7 @@ function refreshLifeHud(){
   lifeState.textContent=shipLife===0?'SUNK':'LIFE';
 }
 function damageShip(mine,amount=null){
+  if(isIslandSafeZone(ship.position.x,ship.position.z))return;
   const damage=amount??(mine?shipLifeMax*.1:10);
   shipLife=Math.max(0,shipLife-damage);
   if(damage>=5)boatVelocity*=.2;
@@ -468,7 +488,7 @@ const carriers=carrierPatrols.map((path,i)=>makeCarrier(i+1,path));
 function placeShipAtStart(){
   const startSite=dockById[missionContracts[0]?.from||'ember'],nextSite=dockById[missionContracts[0]?.to||'cinder'];
   const dx=nextSite.x-startSite.x,dz=nextSite.z-startSite.z;
-  const side=3.4,offsetX=-Math.sin(startSite.rotation)*side,offsetZ=Math.cos(startSite.rotation)*side;
+  const side=2.5,offsetX=-Math.sin(startSite.rotation)*side,offsetZ=Math.cos(startSite.rotation)*side;
   ship.position.set(startSite.x+offsetX,-.025,startSite.z+offsetZ);
   ship.rotation.y=Math.atan2(dz,-dx);
   for(const mine of mineNodes)placeMine(mine);
@@ -835,21 +855,23 @@ function animate(){requestAnimationFrame(animate);
     if(!mine.group.visible)continue;
     if(gameTime>=mine.nextTurn){const direction=rand(0,Math.PI*2),drift=rand(.18,.52);mine.vx=Math.cos(direction)*drift;mine.vz=Math.sin(direction)*drift;mine.nextTurn=gameTime+rand(2,5);}
     const mx=mine.group.position.x+mine.vx*dt,mz=mine.group.position.z+mine.vz*dt,mr=Math.hypot(mx,mz),ma=Math.atan2(mz,mx);
-    if(navigableWater(mx,mz,2.4)&&mr<maxBoatRadius-3)mine.group.position.set(mx,mine.group.position.y,mz);
+    if(navigableWater(mx,mz,2.4)&&!isIslandSafeZone(mx,mz,.6)&&mr<maxBoatRadius-3)mine.group.position.set(mx,mine.group.position.y,mz);
     else {mine.vx=-mine.vx;mine.vz=-mine.vz;mine.nextTurn=gameTime+rand(.5,1.4);}
     mine.group.position.y=-.035+Math.sin(gameTime*1.35+mine.phase)*.09;
     mine.group.rotation.y+=dt*.42;mine.group.rotation.z=Math.sin(gameTime*.8+mine.phase)*.045;
     const mineRange=Math.hypot(mine.group.position.x-ship.position.x,mine.group.position.z-ship.position.z);
     mine.warningRing.visible=mineRange<14;
     if(mine.warningRing.visible)mine.warningRing.material.opacity=.18+.2*(.5+.5*Math.sin(gameTime*7+mine.phase));
-    if(running&&mineRange<1.72)damageShip(mine);
+    if(running&&mineRange<1.72&&!isIslandSafeZone(ship.position.x,ship.position.z))damageShip(mine);
     else if(mineRange>68)placeMine(mine);
   }
+  const shipSafe=isIslandSafeZone(ship.position.x,ship.position.z);
   let closestCarrierRange=Infinity,aircraftInRange=false;
   for(const carrier of carriers){
     carrier.cooldown-=dt;carrier.engageCooldown=Math.max(0,carrier.engageCooldown-dt);
     const range=Math.hypot(carrier.group.position.x-ship.position.x,carrier.group.position.z-ship.position.z);
-    if(running&&carrier.mode==='patrol'&&range<52&&carrier.engageCooldown<=0){carrier.mode='intercept';carrier.pursuit=7.5;carrier.engageCooldown=27;}
+    if(shipSafe&&carrier.mode==='intercept'){carrier.mode='return';carrier.returnIndex=nearestCarrierWaypoint(carrier);}
+    if(running&&!shipSafe&&carrier.mode==='patrol'&&range<52&&carrier.engageCooldown<=0){carrier.mode='intercept';carrier.pursuit=7.5;carrier.engageCooldown=27;}
     if(carrier.mode==='patrol'){
       const target=carrier.patrolPath[carrier.waypoint];
       if(steerCarrier(carrier,target,dt,carrier.patrolSpeed)<9)carrier.waypoint=(carrier.waypoint+1)%carrier.patrolPath.length;
@@ -872,12 +894,12 @@ function animate(){requestAnimationFrame(animate);
       escort.jet.rotation.z=.12*Math.sin(phase);
       escort.cooldown=Math.max(0,escort.cooldown-dt);
       const jetRange=Math.hypot(x-ship.position.x,z-ship.position.z);
-      if(jetRange<=30){aircraftInRange=true;if(running&&!missionEnded&&shipLife>0&&escort.cooldown<=0){fireJetShot(escort);escort.cooldown=1.35;}}
+      if(jetRange<=30&&!shipSafe){aircraftInRange=true;if(running&&!missionEnded&&shipLife>0&&escort.cooldown<=0){fireJetShot(escort);escort.cooldown=1.35;}}
     }
     if(running&&gameTime>=carrier.nextFlareAt){launchFlare(carrier);carrier.nextFlareAt+=40;}
     const currentRange=Math.hypot(carrier.group.position.x-ship.position.x,carrier.group.position.z-ship.position.z);
     closestCarrierRange=Math.min(closestCarrierRange,currentRange);
-    if(currentRange<=43&&shipLife>0){
+    if(currentRange<=43&&!shipSafe&&shipLife>0){
       carrier.group.updateMatrixWorld(true);
       const targetLocal=carrier.group.worldToLocal(ship.position.clone());
       for(const turret of carrier.turrets)turret.rotation.y=Math.atan2(targetLocal.z-turret.position.z,-(targetLocal.x-turret.position.x));
@@ -892,15 +914,15 @@ function animate(){requestAnimationFrame(animate);
   }
   for(let i=towerShotMeshes.length-1;i>=0;i--){const shot=towerShotMeshes[i];shot.life-=dt;shot.mesh.material.opacity=Math.max(0,shot.life/.18);if(shot.life<=0){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();towerShotMeshes.splice(i,1);}}
   const status=$('#status');
-  const hullPercent=shipLife/shipLifeMax*100;status.textContent=sinking?'VESSEL SINKING':!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):hullPercent<=30?'HULL CRITICAL':aircraftInRange?'AIRCRAFT ATTACK':closestCarrierRange<43?'UNDER FIRE':closestCarrierRange<52?'CARRIER ALERT':'LIVE SIMULATION';
-  status.classList.toggle('danger',running&&(hullPercent<=30||aircraftInRange||closestCarrierRange<43));
+  const hullPercent=shipLife/shipLifeMax*100;status.textContent=sinking?'VESSEL SINKING':!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):shipSafe?'ISLAND SAFE ZONE':hullPercent<=30?'HULL CRITICAL':aircraftInRange?'AIRCRAFT ATTACK':closestCarrierRange<43?'UNDER FIRE':closestCarrierRange<52?'CARRIER ALERT':'LIVE SIMULATION';
+  status.classList.toggle('danger',running&&!shipSafe&&(hullPercent<=30||aircraftInRange||closestCarrierRange<43));
   for(let i=carrierShots.length-1;i>=0;i--){
     const shot=carrierShots[i],previous=shot.mesh.position.clone();shot.age+=dt;
     const t=clamp(shot.age/shot.duration,0,1),distance=shot.start.distanceTo(shot.target);
     shot.mesh.position.lerpVectors(shot.start,shot.target,t);
     shot.mesh.position.y+=Math.sin(Math.PI*t)*Math.min(3,distance*.055);
     shot.trail.geometry.dispose();shot.trail.geometry=new THREE.BufferGeometry().setFromPoints([previous,shot.mesh.position]);
-    if(t>=1&&running){const hit=!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8;waterSplash(hit?ship.position:shot.target,hit?1.4:.85);if(hit)damageShip(null,10);
+    if(t>=1&&running){const hit=!shipSafe&&!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8;waterSplash(hit?ship.position:shot.target,hit?1.4:.85);if(hit)damageShip(null,10);
       scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.material.dispose();carrierShots.splice(i,1);}
   }
   for(let i=jetShots.length-1;i>=0;i--){
@@ -909,7 +931,7 @@ function animate(){requestAnimationFrame(animate);
     shot.mesh.position.lerpVectors(shot.start,shot.target,t);
     shot.trail.geometry.dispose();shot.trail.geometry=new THREE.BufferGeometry().setFromPoints([previous,shot.mesh.position]);
     if(t>=1&&running){
-      if(!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8)damageShip(null,shipLifeMax*.01);
+      if(!shipSafe&&!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8)damageShip(null,shipLifeMax*.01);
       scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();jetShots.splice(i,1);
     }
   }
