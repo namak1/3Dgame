@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node build.mjs",
     "format": "prettier --write .",
-    "check": "prettier --check . && node build.mjs && git diff --exit-code -- index.html"
+    "check": "prettier --check . && node build.mjs && git diff --exit-code -- index.html dist/index.html"
   },
   "dependencies": {
     "three": "^0.186.1"

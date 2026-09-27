@@ -1,5 +1,9 @@
 # Build output. `npm run build` regenerates all of these from game.js.
-dist/
+# dist/index.html is committed because the Cloudflare deploy command is a bare
+# `npx wrangler deploy` with no build step, so the assets have to be in the
+# checkout. CI fails if the committed copy drifts from game.js.
+dist/*
+!dist/index.html
 Volcano-Island-offline.html
 
 # Tooling

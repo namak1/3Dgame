@@ -24,7 +24,7 @@ Each island has a four-unit safe zone beyond its shoreline, marked by a dashed g
 - `game.js` — the whole game: procedural scene building, boat handling, missions, navy AI and HUD wiring.
 - `index.template.html` — page shell, HUD markup and the minified stylesheet. Its CSS stays minified on purpose, because the styles ship verbatim inside the single-file build.
 - `index.html` — the built, playable page. It is generated, so it is excluded from diffs (see `.gitattributes`); edit `game.js` or the template and rebuild instead.
-- `dist/index.html` — the same page for the Cloudflare Worker asset directory. Not tracked; `npm run build` recreates it.
+- `dist/index.html` — the same page, published by the `volcano` Worker. Tracked on purpose: the Cloudflare deploy command is a bare `npx wrangler deploy` with no build step, so the assets have to exist in the checkout. `npm run check` fails if it drifts from `game.js`.
 - `build.mjs` — bundles `game.js` with esbuild, inlines it into the template, and syntax-checks the result.
 
 ## Build the offline page
@@ -47,13 +47,15 @@ CI runs `npm run check` on every push and pull request, so a source change that 
 
 ## Deploy
 
-The Worker serves generated files, so the build has to run before a deploy:
+The Worker publishes the `./dist` directory (see `wrangler.jsonc`) and the Cloudflare build runs `npm clean-install` followed by `npx wrangler deploy` with no build step of its own. That is why `dist/index.html` is committed: the deploy finds the page already in the checkout.
 
 ```sh
-npm ci && npm run build && npx wrangler deploy
+npx wrangler deploy
 ```
 
-Point the Cloudflare build command at `npm run build` (or `npm run check`); `dist/` is not committed, so a deploy that skips the build would serve nothing.
+After editing `game.js` or `index.template.html`, run `npm ci && npm run build` and commit the regenerated `index.html` and `dist/index.html` in the same change; CI fails the pull request if they are out of date.
+
+If you would rather not track the built page, set the Cloudflare build command to `npm run build` (the deploy command stays `npx wrangler deploy`), then `dist/` can go back to being ignored — delete the `!dist/index.html` exception in `.gitignore`, drop the committed file and remove the second path from the `check` script in `package.json`.
 
 ## License
 
