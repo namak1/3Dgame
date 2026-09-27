@@ -10,7 +10,7 @@ const result = await build({
   format: 'iife',
   target: 'es2020',
   legalComments: 'none',
-  write: false,
+  write: false
 });
 const bundle = `<script>\n${result.outputFiles[0].text}\n</script>`;
 if (!template.includes('<!-- GAME_BUNDLE -->'))
@@ -22,5 +22,5 @@ await writeFile('Volcano-Island-offline.html', html);
 await mkdir('dist', { recursive: true });
 await writeFile('dist/index.html', html);
 console.log(
-  `Built index.html, Volcano-Island-offline.html, and dist/index.html (${html.length.toLocaleString()} bytes)`,
+  `Built index.html, Volcano-Island-offline.html, and dist/index.html (${html.length.toLocaleString()} bytes)`
 );
