@@ -2273,53 +2273,157 @@ function updateUpgradeHud() {
   }
   updateCashHud();
 }
-const giftGold = new THREE.MeshStandardMaterial({
-  color: 0xf5bd4f,
-  metalness: 0.62,
+// Pickups are two deliberately different icons: a gold coin standing on edge for
+// cash and a white medical case for repairs, each wrapped in a soft halo tinted
+// to match its radar blip so the type reads long before the tag does.
+const pickupGold = new THREE.MeshStandardMaterial({
+  color: 0xe9b23c,
+  metalness: 0.6,
   roughness: 0.3,
-  emissive: 0x613f09,
-  emissiveIntensity: 0.2
+  emissive: 0x4a3208,
+  emissiveIntensity: 0.35
 });
-const giftGreen = new THREE.MeshStandardMaterial({
-  color: 0x66bf91,
-  metalness: 0.22,
-  roughness: 0.46,
-  emissive: 0x124729,
-  emissiveIntensity: 0.2
+const pickupGoldEdge = new THREE.MeshStandardMaterial({
+  color: 0xc08c25,
+  metalness: 0.7,
+  roughness: 0.32
 });
-const giftWhite = new THREE.MeshStandardMaterial({ color: 0xf4ead7, roughness: 0.6 });
-const giftRed = new THREE.MeshStandardMaterial({
-  color: 0xd94c42,
+const pickupCase = new THREE.MeshStandardMaterial({ color: 0xf2ecdf, roughness: 0.55 });
+const pickupCaseShade = new THREE.MeshStandardMaterial({ color: 0xd8d0bf, roughness: 0.62 });
+const pickupCross = new THREE.MeshStandardMaterial({
+  color: 0xd8452f,
   roughness: 0.44,
-  emissive: 0x48100d,
-  emissiveIntensity: 0.2
+  emissive: 0x3f0f08,
+  emissiveIntensity: 0.25
 });
+const pickupSteel = new THREE.MeshStandardMaterial({
+  color: 0x59636b,
+  metalness: 0.5,
+  roughness: 0.5
+});
+function coinFaceTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#c9932c';
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.beginPath();
+  ctx.arc(64, 64, 60, 0, Math.PI * 2);
+  ctx.fillStyle = '#f0c055';
+  ctx.fill();
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = '#a9761d';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(64, 64, 46, 0, Math.PI * 2);
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#7c5410';
+  ctx.font = 'bold 74px Georgia, "Times New Roman", serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('$', 64, 70);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.center.set(0.5, 0.5);
+  texture.rotation = -Math.PI / 2; // the coin stands on edge, so the $ stays upright
+  return texture;
+}
 function makePickup() {
   const group = new THREE.Group(),
     cashGroup = new THREE.Group(),
     healthGroup = new THREE.Group();
-  const cashBox = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.62, 0.72), giftGold);
-  cashBox.castShadow = true;
-  cashGroup.add(cashBox);
-  const coin = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.065, 7, 18), giftGold);
-  coin.position.y = 0.39;
+
+  // Cash: a coin on edge over a couple of coins lying flat, like a floating pile.
+  const coinFace = new THREE.MeshStandardMaterial({
+    map: coinFaceTexture(),
+    metalness: 0.5,
+    roughness: 0.34,
+    emissive: 0x3a2604,
+    emissiveIntensity: 0.3
+  });
+  const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.1, 28), [
+    pickupGoldEdge,
+    coinFace,
+    coinFace
+  ]);
+  coin.rotation.z = Math.PI / 2;
+  coin.position.y = 0.46;
+  coin.castShadow = true;
   cashGroup.add(coin);
-  const dollarBar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.34, 0.05), giftGreen);
-  dollarBar.position.set(0, 0.39, 0.035);
-  cashGroup.add(dollarBar);
-  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.62, 0.72), giftWhite);
-  pack.castShadow = true;
-  healthGroup.add(pack);
-  const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.48, 0.06), giftRed);
-  crossV.position.z = 0.39;
-  healthGroup.add(crossV);
-  const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.17, 0.06), giftRed);
-  crossH.position.z = 0.4;
-  healthGroup.add(crossH);
-  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 0.74), giftGreen);
-  lid.position.y = 0.34;
-  healthGroup.add(lid);
-  group.add(cashGroup, healthGroup);
+  const flatCoins = [
+    [0.32, 0.07, 0.04, 0.2],
+    [0.26, 0.13, -0.14, -0.5],
+    [0.24, 0.19, 0.12, 0.9]
+  ];
+  for (const [radius, y, x, turn] of flatCoins) {
+    const flat = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.07, 24), [
+      pickupGoldEdge,
+      coinFace,
+      coinFace
+    ]);
+    flat.position.set(x, y, 0.05);
+    flat.rotation.y = turn;
+    flat.castShadow = true;
+    cashGroup.add(flat);
+  }
+
+  // Health: a medical case, with the cross repeated on every face and the lid so
+  // it stays readable while the pickup slowly spins.
+  const caseBody = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.5, 0.58), pickupCase);
+  caseBody.position.y = 0.4;
+  caseBody.castShadow = true;
+  healthGroup.add(caseBody);
+  const caseBase = new THREE.Mesh(new THREE.BoxGeometry(0.87, 0.14, 0.6), pickupCaseShade);
+  caseBase.position.y = 0.22;
+  healthGroup.add(caseBase);
+  const lidSeam = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.035, 0.61), pickupSteel);
+  lidSeam.position.y = 0.5;
+  healthGroup.add(lidSeam);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.028, 6, 16, Math.PI), pickupSteel);
+  handle.position.y = 0.65;
+  healthGroup.add(handle);
+  const latch = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.1, 0.04), pickupSteel);
+  latch.position.set(0, 0.42, 0.3);
+  healthGroup.add(latch);
+  const cross = (w, h, d, x, y, z) => {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), pickupCross);
+    bar.position.set(x, y, z);
+    healthGroup.add(bar);
+  };
+  for (const side of [-1, 1]) {
+    cross(0.16, 0.3, 0.03, 0, 0.4, side * 0.3);
+    cross(0.3, 0.16, 0.03, 0, 0.4, side * 0.3);
+    cross(0.03, 0.3, 0.16, side * 0.43, 0.4, 0);
+    cross(0.03, 0.16, 0.3, side * 0.43, 0.4, 0);
+  }
+  cross(0.16, 0.02, 0.3, 0, 0.66, 0);
+  cross(0.3, 0.02, 0.16, 0, 0.66, 0);
+
+  // Shared aura: a soft shell around the icon and a ring that stays on the water.
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 14, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd46f,
+      transparent: true,
+      opacity: 0.14,
+      depthWrite: false
+    })
+  );
+  halo.position.y = 0.45;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.46, 0.6, 30),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd46f,
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = -0.02;
+  group.add(cashGroup, healthGroup, halo, ring);
   scene.add(group);
   const tag = document.createElement('div');
   tag.className = 'pickup-tag';
@@ -2328,6 +2432,8 @@ function makePickup() {
     group,
     cashGroup,
     healthGroup,
+    halo,
+    ring,
     tag,
     available: false,
     type: 'cash',
@@ -2373,6 +2479,9 @@ function placePickup(pickup, nearCarrier = Math.random() < 0.8, preferredCarrier
   pickup.type = Math.random() < 0.5 ? 'cash' : 'health';
   pickup.cashGroup.visible = pickup.type === 'cash';
   pickup.healthGroup.visible = pickup.type === 'health';
+  const tint = pickup.type === 'cash' ? 0xffd46f : 0x8be0a2;
+  pickup.halo.material.color.set(tint);
+  pickup.ring.material.color.set(tint);
   pickup.tag.textContent = pickup.type === 'cash' ? '$500' : 'HEALTH +20';
   pickup.available = true;
   pickup.expiresAt = gameTime + 30;
@@ -3456,6 +3565,12 @@ function animate(timestamp) {
       }
       pickup.group.position.y = -0.02 + Math.sin(gameTime * 1.8 + pickup.phase) * 0.12;
       pickup.group.rotation.y += dt * 0.55;
+      // Aura breathes, and the ring is pinned to the water while the icon bobs.
+      const pulse = 0.5 + 0.5 * Math.sin(gameTime * 2.8 + pickup.phase);
+      pickup.halo.material.opacity = 0.09 + pulse * 0.1;
+      pickup.halo.scale.setScalar(0.92 + pulse * 0.14);
+      pickup.ring.material.opacity = 0.18 + pulse * 0.24;
+      pickup.ring.position.y = -0.03 - pickup.group.position.y;
       if (
         running &&
         !missionEnded &&
@@ -3477,7 +3592,7 @@ function animate(timestamp) {
         pickup.respawnAt = gameTime + rand(5, 10);
         continue;
       }
-      const pickupScreen = projectTag(pickup.group.position, 0.95);
+      const pickupScreen = projectTag(pickup.group.position, 1.05);
       pickup.tag.style.left = `${(pickupScreen.x * 0.5 + 0.5) * canvas.clientWidth}px`;
       pickup.tag.style.top = `${(-pickupScreen.y * 0.5 + 0.5) * canvas.clientHeight}px`;
       pickup.tag.style.display = pickupScreen.z > -1 && pickupScreen.z < 1 ? 'block' : 'none';
