@@ -16,7 +16,7 @@ For the modular version, open `index.html` with `game.js` and `vendor/` alongsid
 - P: pause/resume
 - Touch buttons on phones/tablets
 
-Follow mint waypoint rings in order. Green crates restore 22% hull. Orange rings warn of incoming rockets and drones; move out before impact. Mines appear randomly around Hormuz. Three US Navy vessels patrol the Sea of Oman alongside four aircraft. Explorer mode reduces damage and attack frequency. Shoreline and ship collisions damage your hull.
+Follow mint waypoint rings in order. Green crates restore 22% hull. Orange rings warn of incoming rockets and drones; move out before impact. Mines appear randomly around Hormuz. Two volcanic islands rise beside the sea lanes, pale surf traces the coasts, and eight defense batteries intercept nearby rockets and drones. Three US Navy vessels patrol the Sea of Oman alongside four aircraft. Explorer mode reduces damage and attack frequency. Shoreline and ship collisions damage your hull.
 
 This is a fictional arcade scenario, with compressed, approximate geography, not a navigation chart or real-world military simulation.
 
