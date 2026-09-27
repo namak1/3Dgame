@@ -21,7 +21,8 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.25;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// PCFSoftShadowMap was removed in three r186 (it silently fell back to PCF).
+renderer.shadowMap.type = THREE.PCFShadowMap;
 const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 650);
 let yaw = 0.62,
   pitch = 0.35,
@@ -33,13 +34,28 @@ let running = true,
   eruptionPower = 0.68,
   elapsed = 0,
   nextBurst = 1.3;
-const clock = new THREE.Clock();
+// THREE.Clock is deprecated in three r186; Timer also reports a zero delta while
+// the tab is hidden, which keeps the boat from teleporting on the next frame.
+const clock = new THREE.Timer();
+clock.connect(document);
 const $ = (s) => document.querySelector(s);
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = THREE.MathUtils.clamp;
+// Respect the OS "reduce motion" setting: keep the world readable without the
+// constant boat bob and hit shake.
+const reduceMotion =
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 eruptionPower = rand(0.38, 0.86);
 nextBurst = rand(2, 4.5);
 const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+// The whole volcano (terrain, crater, lava, trees) lives in one group that is
+// scaled as a unit, so coast() and every height-derived placement below stay in
+// sync with what is drawn.
+const VOLCANO_SCALE = 1.6;
+const CRATER_TOP_Y = 3.15 * VOLCANO_SCALE;
+const LAVA_POOL_Y = 2.55 * VOLCANO_SCALE;
+const volcano = new THREE.Group();
+scene.add(volcano);
 
 const hemi = new THREE.HemisphereLight(0xccefff, 0x5c5246, 3.1);
 scene.add(hemi);
@@ -47,14 +63,27 @@ const sun = new THREE.DirectionalLight(0xffefd5, 4.5);
 sun.position.set(-8, 13, 7);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -12;
-sun.shadow.camera.right = 12;
-sun.shadow.camera.top = 12;
-sun.shadow.camera.bottom = -12;
+// The shadow box follows the boat (see updateShadowLight) instead of sitting on
+// the origin, so the water and island you are actually looking at keep shadows.
+const SHADOW_EXTENT = 24;
+const sunOffset = new THREE.Vector3(-8, 13, 7);
+sun.shadow.camera.left = -SHADOW_EXTENT;
+sun.shadow.camera.right = SHADOW_EXTENT;
+sun.shadow.camera.top = SHADOW_EXTENT;
+sun.shadow.camera.bottom = -SHADOW_EXTENT;
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 90;
 sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.03;
 scene.add(sun);
+scene.add(sun.target);
+function updateShadowLight(x, z) {
+  sun.target.position.set(x, 0, z);
+  sun.position.set(x + sunOffset.x, sunOffset.y, z + sunOffset.z);
+  sun.target.updateMatrixWorld();
+}
 const fireLight = new THREE.PointLight(0xff4a14, 22, 11, 1.8);
-fireLight.position.set(0, 3.5, 0);
+fireLight.position.set(0, CRATER_TOP_Y + 0.45, 0);
 scene.add(fireLight);
 const fill = new THREE.DirectionalLight(0x8eb7d0, 1.5);
 fill.position.set(8, 5, -8);
@@ -76,7 +105,7 @@ function baseCoast(a) {
   );
 }
 function coast(a) {
-  return baseCoast(a) * 1.6;
+  return baseCoast(a) * VOLCANO_SCALE;
 }
 const lakeCenterZ = 12;
 function lakeRadius(a) {
@@ -140,7 +169,7 @@ function terrainMesh() {
   );
   land.castShadow = true;
   land.receiveShadow = true;
-  scene.add(land);
+  volcano.add(land);
 
   const innerPos = [],
     innerIdx = [];
@@ -160,7 +189,7 @@ function terrainMesh() {
   bowl.setAttribute('position', new THREE.Float32BufferAttribute(innerPos, 3));
   bowl.setIndex(innerIdx);
   bowl.computeVertexNormals();
-  scene.add(
+  volcano.add(
     new THREE.Mesh(
       bowl,
       new THREE.MeshStandardMaterial({ color: 0x251d20, side: THREE.DoubleSide, roughness: 1 })
@@ -174,8 +203,8 @@ const lavaCore = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0xff4a0a, side: THREE.DoubleSide })
 );
 lavaCore.rotation.x = -Math.PI / 2;
-lavaCore.position.y = 2.55;
-scene.add(lavaCore);
+lavaCore.position.y = 2.55; // local to the volcano group; VOLCANO_SCALE is applied on top
+volcano.add(lavaCore);
 const lavaInner = new THREE.Mesh(
   new THREE.CircleGeometry(0.37, 64),
   new THREE.MeshBasicMaterial({
@@ -187,19 +216,19 @@ const lavaInner = new THREE.Mesh(
 );
 lavaInner.rotation.x = -Math.PI / 2;
 lavaInner.position.y = 2.57;
-scene.add(lavaInner);
+volcano.add(lavaInner);
 const rim = new THREE.Mesh(
   new THREE.TorusGeometry(0.53, 0.05, 7, 82),
   new THREE.MeshBasicMaterial({ color: 0xff5c14, transparent: true, opacity: 0.78 })
 );
 rim.rotation.x = Math.PI / 2;
 rim.position.y = 3.12;
-scene.add(rim);
+volcano.add(rim);
 
 const lavaFlows = [];
 function makeFlow(direction, length, width, seed) {
   const flowGroup = new THREE.Group();
-  scene.add(flowGroup);
+  volcano.add(flowGroup);
   for (let layer = 0; layer < 3; layer++) {
     const points = [],
       indices = [];
@@ -243,12 +272,8 @@ function makeFlow(direction, length, width, seed) {
 makeFlow(0.26, 4.4, 0.31, 0.2);
 makeFlow(2.58, 3.65, 0.29, 1.9);
 makeFlow(4.55, 3.95, 0.2, 3.4);
-// Scale both volcanic islands without moving the ship, sea, or shoreline scenery.
-const emberVolcano = new THREE.Group();
-for (const child of [...scene.children].slice(4)) emberVolcano.add(child);
-emberVolcano.scale.set(1.6, 1.6, 1.6);
-scene.add(emberVolcano);
-fireLight.position.y = 5.5;
+// Cinder Key is a clone of this group, so both islands share one definition.
+volcano.scale.setScalar(VOLCANO_SCALE);
 
 function radialMesh(inner, outer, rings = 16, segments = 192) {
   const positions = [],
@@ -594,12 +619,27 @@ shipCargoCrates.visible = false;
 
 // Cinder will clone Ember's terrain, crater, lava flows, and trees.
 const secondVolcanoSite = { id: 'cinder', name: 'CINDER KEY', x: 72, z: -68, radius: 8 };
+// Ember Isle sits at the origin; Cinder Key is the same island 99 units away.
+const islandCenters = [
+  { x: 0, z: 0 },
+  { x: secondVolcanoSite.x, z: secondVolcanoSite.z }
+];
 let secondVolcano;
 const cinderTag = document.createElement('div');
 cinderTag.className = 'dock-tag';
 cinderTag.textContent = 'CINDER KEY · ACTIVE CRATER';
 document.body.appendChild(cinderTag);
 
+// A pier runs from the shoreline out into the lake; the boat berths alongside it
+// instead of on top of it. Local +x points away from the island, so the deck
+// starts just off the shore and the berth sits BERTH_OFFSET out from the middle.
+const PIER_DECK = { length: 8, width: 2.6, center: 2.2 };
+const BERTH_OFFSET = 3.8;
+function siteToWorld(site, lx, lz) {
+  const c = Math.cos(site.rotation),
+    s = Math.sin(site.rotation);
+  return { x: site.x + c * lx + s * lz, z: site.z - s * lx + c * lz };
+}
 function makeDock(site) {
   const group = new THREE.Group();
   group.position.set(site.x, -0.055, site.z);
@@ -619,13 +659,13 @@ function makeDock(site) {
     group.add(item);
     return item;
   };
-  cube(11, 0.3, 4, deckMat, 2, 0.02, 0);
-  cube(7, 0.18, 4.5, deckMat, 7, -0.1, 0);
-  for (const x of [-2.7, 2.3, 7.4, 10])
-    for (const z of [-1.55, 1.55]) cube(0.34, 1.05, 0.34, trimMat, x, -0.45, z);
-  for (let i = 0; i < 6; i++) cube(0.045, 0.035, 3.7, trimMat, -2.7 + i * 1.8, 0.2, 0);
+  cube(PIER_DECK.length, 0.3, PIER_DECK.width, deckMat, PIER_DECK.center, 0.02, 0);
+  cube(2.6, 0.18, 3.1, deckMat, 7.3, -0.1, 0);
+  for (const x of [-1.5, 1.0, 3.6, 6.0, 7.8])
+    for (const z of [-1.05, 1.05]) cube(0.34, 1.15, 0.34, trimMat, x, -0.5, z);
+  for (let i = 0; i < 4; i++) cube(0.045, 0.035, 2.4, trimMat, -0.9 + i * 1.9, 0.2, 0);
   const marker = new THREE.Mesh(
-    new THREE.TorusGeometry(2.25, 0.055, 6, 36),
+    new THREE.TorusGeometry(2, 0.055, 6, 36),
     new THREE.MeshBasicMaterial({
       color: 0xffa05f,
       transparent: true,
@@ -634,20 +674,23 @@ function makeDock(site) {
     })
   );
   marker.rotation.x = Math.PI / 2;
-  marker.position.set(0, 0.24, 0);
+  marker.position.set(0, 0.24, BERTH_OFFSET);
   group.add(marker);
-  cube(0.8, 0.65, 0.72, trimMat, 5, 0.5, -2.35);
-  cube(0.8, 0.65, 0.72, trimMat, 6, 0.5, -2.35);
-  for (const x of [1, 7]) {
+  cube(0.8, 0.65, 0.72, trimMat, 7, 0.32, -0.85);
+  cube(0.8, 0.65, 0.72, trimMat, 7, 0.32, 0.85);
+  for (const x of [0.2, 4.6]) {
     const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.45, 8), trimMat);
-    bollard.position.set(x, 0.4, site.id === 'ember' ? 2.15 : -2.15);
+    bollard.position.set(x, 0.4, PIER_DECK.width / 2 - 0.15);
     group.add(bollard);
   }
   const tag = document.createElement('div');
   tag.className = 'dock-tag';
   tag.textContent = `${site.name} · VOLCANO DOCK`;
   document.body.appendChild(tag);
-  return { ...site, group, marker, tag };
+  // Everything outside makeDock treats a dock's x/z as the berth: the spot the
+  // boat parks, the radar goal marker and the delivery clock all use it.
+  const berth = siteToWorld(site, 0, BERTH_OFFSET);
+  return { ...site, x: berth.x, z: berth.z, group, marker, tag };
 }
 const dockSites = [
   { id: 'ember', name: 'EMBER ISLE', x: 8, z: 6, rotation: -0.55 },
@@ -662,10 +705,7 @@ function islandClearance(x, z, cx, cz) {
   return Math.hypot(dx, dz) - coast(Math.atan2(dz, dx));
 }
 function isIslandSafeZone(x, z, extra = 0) {
-  return (
-    islandClearance(x, z, 0, 0) <= safeZoneWidth + extra ||
-    islandClearance(x, z, secondVolcanoSite.x, secondVolcanoSite.z) <= safeZoneWidth + extra
-  );
+  return islandCenters.some((c) => islandClearance(x, z, c.x, c.z) <= safeZoneWidth + extra);
 }
 function addSafeZoneRing(cx, cz) {
   const points = [];
@@ -688,17 +728,13 @@ function addSafeZoneRing(cx, cz) {
   ring.computeLineDistances();
   scene.add(ring);
 }
-addSafeZoneRing(0, 0);
-addSafeZoneRing(secondVolcanoSite.x, secondVolcanoSite.z);
+for (const island of islandCenters) addSafeZoneRing(island.x, island.z);
 function navigableWater(x, z, margin = 2.5) {
   if (!insideLake(x, z, margin)) return false;
-  if (islandClearance(x, z, 0, 0) < margin) return false;
-  if (islandClearance(x, z, secondVolcanoSite.x, secondVolcanoSite.z) < margin) return false;
-  return true;
+  return islandCenters.every((c) => islandClearance(x, z, c.x, c.z) >= margin);
 }
 
 // Floating sea mines populate the route ahead and take 10% of hull life on impact.
-const maxBoatRadius = 155;
 const mineNodes = [];
 const mineCoreMat = new THREE.MeshStandardMaterial({
   color: 0x263b43,
@@ -786,16 +822,13 @@ function placeMine(mine) {
       z = ship.position.z + hz * ahead + sideZ * side;
     } else {
       const a = rand(0, Math.PI * 2),
-        r = rand(8, Math.min(55, maxBoatRadius - 8));
+        r = rand(8, 55);
       x = r * Math.cos(a);
       z = r * Math.sin(a);
     }
-    const radius = Math.hypot(x, z),
-      angle = Math.atan2(z, x);
     if (
       navigableWater(x, z, 2.4) &&
       !isIslandSafeZone(x, z, 0.6) &&
-      radius < maxBoatRadius - 3 &&
       Math.hypot(x - ship.position.x, z - ship.position.z) > 7
     ) {
       mine.group.position.set(x, -0.035, z);
@@ -889,18 +922,15 @@ function makeBattery(x, y, z) {
   turret.add(optic);
   return { group, turret, cooldown: rand(0.3, 2.2), phase: rand(0, Math.PI * 2) };
 }
-const batterySites = [
-  ...[-2.5, -0.35, 1.75].map((a) => ({
-    x: Math.cos(a) * 7.35,
-    y: landHeight(4.6, a) * 1.6,
-    z: Math.sin(a) * 7.35
-  })),
-  ...[-2.5, -0.35, 1.75].map((a) => ({
-    x: secondVolcanoSite.x + Math.cos(a) * 7.35,
-    y: landHeight(4.6, a) * 1.6,
-    z: secondVolcanoSite.z + Math.sin(a) * 7.35
+const BATTERY_LOCAL_RADIUS = 4.6;
+const batteryAngles = [-2.5, -0.35, 1.75];
+const batterySites = islandCenters.flatMap((island) =>
+  batteryAngles.map((a) => ({
+    x: island.x + Math.cos(a) * BATTERY_LOCAL_RADIUS * VOLCANO_SCALE,
+    y: landHeight(BATTERY_LOCAL_RADIUS, a) * VOLCANO_SCALE,
+    z: island.z + Math.sin(a) * BATTERY_LOCAL_RADIUS * VOLCANO_SCALE
   }))
-];
+);
 const defenseBatteries = batterySites.map((s) => makeBattery(s.x, s.y, s.z));
 const splashObjects = [];
 function waterSplash(position, power = 1) {
@@ -963,12 +993,16 @@ function refreshLifeHud() {
   lifeFill.style.background = percent <= 30 ? '#ff5c51' : percent <= 60 ? '#ffb24a' : '#65d7bb';
   lifeState.textContent = shipLife === 0 ? 'SUNK' : 'LIFE';
 }
-function damageShip(mine, amount = null) {
+// Every source of damage is a share of maximum hull life, so upgrading the hull
+// scales all three threats together instead of quietly weakening carrier fire.
+const HULL_DAMAGE = { mine: 0.1, shell: 0.1, jet: 0.01 };
+const CARGO_DAMAGE = { mine: 24, shell: 16, jet: 1 };
+function damageShip(source, mine = null) {
   if (isIslandSafeZone(ship.position.x, ship.position.z)) return;
-  const damage = amount ?? (mine ? shipLifeMax * 0.1 : 10);
+  const damage = shipLifeMax * HULL_DAMAGE[source];
   shipLife = Math.max(0, shipLife - damage);
   if (damage >= 5) boatVelocity *= 0.2;
-  hitShake = Math.min(1, hitShake + (damage >= 5 ? 0.52 : 0.08));
+  if (!reduceMotion) hitShake = Math.min(1, hitShake + (damage >= 5 ? 0.52 : 0.08));
   refreshLifeHud();
   waterSplash(ship.position.clone(), mine ? 0.55 : damage >= 5 ? 1.15 : 0.35);
   if (mine) {
@@ -989,7 +1023,7 @@ function damageShip(mine, amount = null) {
     refreshMissionHud();
     showMissionToast('HULL BREACHED · SINKING');
   } else if (cargoOnboard && !missionEnded) {
-    cargoCondition = Math.max(0, cargoCondition - (mine ? 24 : damage >= 5 ? 16 : 1));
+    cargoCondition = Math.max(0, cargoCondition - CARGO_DAMAGE[source]);
     if (cargoCondition === 0) failMission('CARGO DESTROYED · RUN FAILED');
     else refreshMissionHud();
   }
@@ -1462,10 +1496,7 @@ function placeShipAtStart() {
     nextSite = dockById[missionContracts[0]?.to || 'cinder'];
   const dx = nextSite.x - startSite.x,
     dz = nextSite.z - startSite.z;
-  const side = 1.5,
-    offsetX = -Math.sin(startSite.rotation) * side,
-    offsetZ = Math.cos(startSite.rotation) * side;
-  ship.position.set(startSite.x + offsetX, -0.025, startSite.z + offsetZ);
+  ship.position.set(startSite.x, -0.025, startSite.z);
   ship.rotation.y = Math.atan2(dz, -dx);
   for (const mine of mineNodes) placeMine(mine);
 }
@@ -1493,6 +1524,7 @@ function refreshMissionHud() {
   const hud = $('#missionHud'),
     label = $('#missionText'),
     sub = $('#missionSub');
+  $('#shopOpen').disabled = missionEnded || sinking;
   hud.classList.toggle('complete', missionWon);
   hud.classList.toggle('failed', missionEnded && !missionWon);
   if (missionWon) {
@@ -1612,6 +1644,32 @@ const jetTrailMat = new THREE.LineBasicMaterial({
   transparent: true,
   opacity: 0.95
 });
+// Trails are two-point lines. Reusing one small buffer per trail keeps the
+// render loop from allocating (and disposing) a geometry for every shot, flare
+// and frame; frustumCulled is off because the cached bounds never get recomputed.
+function setTrail(line, from, to) {
+  const position = line.geometry.getAttribute('position');
+  position.setXYZ(0, from.x, from.y, from.z);
+  position.setXYZ(1, to.x, to.y, to.z);
+  position.needsUpdate = true;
+}
+function makeTrail(from, material) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+  const line = new THREE.Line(geometry, material);
+  line.frustumCulled = false;
+  scene.add(line);
+  setTrail(line, from, from);
+  return line;
+}
+const scratchA = new THREE.Vector3();
+// World-space labels project through one shared vector; every caller reads the
+// result (and its .z depth test) before the next projection happens.
+const tagProjection = new THREE.Vector3();
+function projectTag(source, height) {
+  return tagProjection.set(source.x, source.y + height, source.z).project(camera);
+}
+
 function fireCarrierShot(carrier, turret) {
   carrier.group.updateMatrixWorld(true);
   const start = turret.localToWorld(new THREE.Vector3(-1.1, 0.32, 0));
@@ -1619,11 +1677,7 @@ function fireCarrierShot(carrier, turret) {
   const mesh = new THREE.Mesh(shotGeo, shotMat);
   mesh.position.copy(start);
   scene.add(mesh);
-  const trail = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([start, start]),
-    shotTrailMat.clone()
-  );
-  scene.add(trail);
+  const trail = makeTrail(start, shotTrailMat.clone());
   carrierShots.push({
     mesh,
     trail,
@@ -1642,11 +1696,7 @@ function fireJetShot(escort) {
   const mesh = new THREE.Mesh(jetShotGeo, jetShotMat);
   mesh.position.copy(start);
   scene.add(mesh);
-  const trail = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([start, start]),
-    jetTrailMat.clone()
-  );
-  scene.add(trail);
+  const trail = makeTrail(start, jetTrailMat.clone());
   jetShots.push({
     mesh,
     trail,
@@ -1771,13 +1821,7 @@ function placePickup(pickup, nearCarrier = Math.random() < 0.8, preferredCarrier
       x = ship.position.x + hx * ahead + sideX * side;
       z = ship.position.z + hz * ahead + sideZ * side;
     }
-    const radius = Math.hypot(x, z),
-      angle = Math.atan2(z, x);
-    if (
-      navigableWater(x, z, 2.5) &&
-      radius < maxBoatRadius - 5 &&
-      Math.hypot(x - ship.position.x, z - ship.position.z) > 6
-    ) {
+    if (navigableWater(x, z, 2.5) && Math.hypot(x - ship.position.x, z - ship.position.z) > 6) {
       placed = true;
       break;
     }
@@ -1827,11 +1871,7 @@ function launchFlare(carrier) {
   const mesh = new THREE.Mesh(flareGeo, flareMat);
   mesh.position.copy(start);
   scene.add(mesh);
-  const trail = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([start, start]),
-    flareTrailMat.clone()
-  );
-  scene.add(trail);
+  const trail = makeTrail(start, flareTrailMat.clone());
   flares.push({
     mesh,
     trail,
@@ -1864,21 +1904,21 @@ for (let i = 0; i < 125; i++) {
   const trunk = new THREE.Mesh(trunkGeo, trunkMat);
   trunk.scale.set(0.55, h * 0.55, 0.55);
   trunk.position.set(x, y + h * 0.28, z);
-  emberVolcano.add(trunk);
+  volcano.add(trunk);
   for (let j = 0; j < 2; j++) {
     const crown = new THREE.Mesh(coneGeo, leafMats[Math.floor(rand(0, 4))]);
     crown.scale.set(h * (j ? 0.48 : 0.62), h * (j ? 0.95 : 1.0), h * (j ? 0.48 : 0.62));
     crown.position.set(x, y + h * (j ? 0.98 : 0.68), z);
     crown.castShadow = true;
-    emberVolcano.add(crown);
+    volcano.add(crown);
   }
 }
 
-secondVolcano = emberVolcano.clone(true);
+secondVolcano = volcano.clone(true);
 secondVolcano.position.set(secondVolcanoSite.x, 0, secondVolcanoSite.z);
 scene.add(secondVolcano);
 const secondFireLight = fireLight.clone();
-secondFireLight.position.set(secondVolcanoSite.x, 5.5, secondVolcanoSite.z);
+secondFireLight.position.set(secondVolcanoSite.x, CRATER_TOP_Y + 0.45, secondVolcanoSite.z);
 scene.add(secondFireLight);
 for (const original of [foam, outerFoamLine]) {
   const copy = original.clone();
@@ -1930,7 +1970,7 @@ function addSpark(force = 1) {
   const crater = Math.random() < 0.5 ? secondVolcanoSite : null;
   mesh.position.set(
     (crater?.x || 0) + rand(-0.5, 0.5),
-    rand(4.9, 5.3),
+    rand(CRATER_TOP_Y - 0.15, CRATER_TOP_Y + 0.25),
     (crater?.z || 0) + rand(-0.5, 0.5)
   );
   scene.add(mesh);
@@ -1953,7 +1993,7 @@ function addSmoke() {
   const crater = Math.random() < 0.5 ? secondVolcanoSite : null;
   mesh.position.set(
     (crater?.x || 0) + rand(-0.27, 0.27),
-    5.0,
+    CRATER_TOP_Y,
     (crater?.z || 0) + rand(-0.27, 0.27)
   );
   mesh.scale.setScalar(rand(0.24, 0.41));
@@ -1972,7 +2012,7 @@ function burst(count = 45) {
 }
 
 const shockwaves = [];
-function pulse(x = 0, z = 0, y = 4.27) {
+function pulse(x = 0, z = 0, y = LAVA_POOL_Y + 0.19) {
   const mesh = new THREE.Mesh(
     new THREE.RingGeometry(0.3, 0.34, 64),
     new THREE.MeshBasicMaterial({
@@ -2050,6 +2090,9 @@ $('#reset').addEventListener('click', () => {
 $('#restart').addEventListener('click', restartVoyage);
 let pausedBeforeShop = true;
 function openUpgradeShop() {
+  // The shop pauses the world, so it must stay shut once the run is over --
+  // otherwise opening it would freeze the sinking countdown mid-way.
+  if (missionEnded || sinking) return;
   pausedBeforeShop = running;
   setPaused(true);
   $('#upgradeModal').hidden = false;
@@ -2097,7 +2140,9 @@ const boatKeys = new Set();
 let boatVelocity = 0,
   throttleHold = 0,
   lastThrottle = 0;
-const boatControls = new Map([
+// Physical keys keep working when a layout moves the letter keys around; the
+// e.key map is the fallback for browsers that report no e.code.
+const boatControlsByCode = new Map([
   ['KeyW', 'forward'],
   ['ArrowUp', 'forward'],
   ['KeyS', 'reverse'],
@@ -2107,7 +2152,9 @@ const boatControls = new Map([
   ['KeyD', 'right'],
   ['ArrowRight', 'right'],
   ['KeyE', 'interact'],
-  ['Enter', 'interact'],
+  ['Enter', 'interact']
+]);
+const boatControlsByKey = new Map([
   ['w', 'forward'],
   ['s', 'reverse'],
   ['a', 'left'],
@@ -2122,7 +2169,7 @@ const boatControls = new Map([
 const typingTarget = (target) =>
   target instanceof Element && !!target.closest('input,textarea,select,[contenteditable="true"]');
 const boatKeyAction = (e) =>
-  boatControls.get(e.code) || boatControls.get((e.key || '').toLowerCase());
+  boatControlsByCode.get(e.code) || boatControlsByKey.get((e.key || '').toLowerCase());
 function startBoatKey(e) {
   const action = boatKeyAction(e);
   if (!action || typingTarget(e.target)) return;
@@ -2135,8 +2182,6 @@ function stopBoatKey(e) {
 }
 window.addEventListener('keydown', startBoatKey, true);
 window.addEventListener('keyup', stopBoatKey, true);
-document.addEventListener('keydown', startBoatKey, true);
-document.addEventListener('keyup', stopBoatKey, true);
 window.addEventListener('blur', () => {
   boatKeys.clear();
   document.querySelectorAll('.touch-key').forEach((button) => button.classList.remove('pressed'));
@@ -2291,10 +2336,9 @@ function drawRadar() {
   }
   ctx.closePath();
   ctx.stroke();
-  for (const [cx, cz] of [
-    [0, 0],
-    [secondVolcanoSite.x, secondVolcanoSite.z]
-  ]) {
+  for (const island of islandCenters) {
+    const cx = island.x,
+      cz = island.z;
     ctx.beginPath();
     for (let i = 0; i <= 96; i++) {
       const a = (i / 96) * Math.PI * 2,
@@ -2341,8 +2385,7 @@ function drawRadar() {
     ctx.fill();
     return { x: px, y: py, dx, dz, distance };
   }
-  mapPoint(0, 0, '#ff8358', 3);
-  mapPoint(secondVolcanoSite.x, secondVolcanoSite.z, '#ff8358', 3);
+  for (const island of islandCenters) mapPoint(island.x, island.z, '#ff8358', 3);
   for (const carrier of carriers) {
     const point = mapPoint(carrier.group.position.x, carrier.group.position.z, '#75caff', 4, true);
     if (point) {
@@ -2444,8 +2487,9 @@ function steerCarrier(carrier, target, dt, speed) {
   if (navigableWater(nextX, nextZ, 13)) carrier.group.position.set(nextX, 0, nextZ);
   return Math.hypot(target.x - carrier.group.position.x, target.y - carrier.group.position.z);
 }
-function animate() {
+function animate(timestamp) {
   requestAnimationFrame(animate);
+  clock.update(timestamp);
   let dt = Math.min(clock.getDelta(), 0.05);
   if (!running) dt = 0;
   gameTime += dt;
@@ -2500,11 +2544,9 @@ function animate() {
     if (Math.abs(boatVelocity) > 0.015) {
       const nextX = ship.position.x - Math.cos(ship.rotation.y) * boatVelocity * dt;
       const nextZ = ship.position.z + Math.sin(ship.rotation.y) * boatVelocity * dt;
-      const radius = Math.hypot(nextX, nextZ),
-        angle = Math.atan2(nextZ, nextX);
-      if (radius >= maxBoatRadius) {
-        boatVelocity = Math.min(0, boatVelocity);
-      } else if (!navigableWater(nextX, nextZ, 1.18)) {
+      // navigableWater already follows the elliptical lake edge and both islands,
+      // so the boat scrapes along the shore instead of an invisible round wall.
+      if (!navigableWater(nextX, nextZ, 1.18)) {
         boatVelocity *= 0.2;
       } else {
         ship.position.x = nextX;
@@ -2515,10 +2557,10 @@ function animate() {
   $('#shipSpeed').textContent = Math.abs(boatVelocity).toFixed(1);
   const sinkProgress = shipLife === 0 ? clamp(sinkElapsed / 10, 0, 1) : 0;
   const sinkEase = sinkProgress * sinkProgress * (3 - 2 * sinkProgress);
-  ship.position.y =
-    -0.025 + Math.sin(gameTime * 1.25) * 0.025 * (1 - sinkProgress) - 3.1 * sinkEase;
-  ship.rotation.z = Math.sin(gameTime * 0.9) * 0.012 * (1 - sinkProgress) + sinkEase * 0.38;
-  ship.rotation.x = Math.sin(gameTime * 0.75 + 0.8) * 0.014 * (1 - sinkProgress) - sinkEase * 0.18;
+  const wobble = reduceMotion ? 0 : 1 - sinkProgress;
+  ship.position.y = -0.025 + Math.sin(gameTime * 1.25) * 0.025 * wobble - 3.1 * sinkEase;
+  ship.rotation.z = Math.sin(gameTime * 0.9) * 0.012 * wobble + sinkEase * 0.38;
+  ship.rotation.x = Math.sin(gameTime * 0.75 + 0.8) * 0.014 * wobble - sinkEase * 0.18;
   if (running && shipLife > 0 && !missionEnded) {
     const target = activeDock(),
       gap = Math.hypot(target.x - ship.position.x, target.z - ship.position.z),
@@ -2562,10 +2604,8 @@ function animate() {
       mine.nextTurn = gameTime + rand(2, 5);
     }
     const mx = mine.group.position.x + mine.vx * dt,
-      mz = mine.group.position.z + mine.vz * dt,
-      mr = Math.hypot(mx, mz),
-      ma = Math.atan2(mz, mx);
-    if (navigableWater(mx, mz, 2.4) && !isIslandSafeZone(mx, mz, 0.6) && mr < maxBoatRadius - 3)
+      mz = mine.group.position.z + mine.vz * dt;
+    if (navigableWater(mx, mz, 2.4) && !isIslandSafeZone(mx, mz, 0.6))
       mine.group.position.set(mx, mine.group.position.y, mz);
     else {
       mine.vx = -mine.vx;
@@ -2584,7 +2624,7 @@ function animate() {
       mine.warningRing.material.opacity =
         0.18 + 0.2 * (0.5 + 0.5 * Math.sin(gameTime * 7 + mine.phase));
     if (running && mineRange < 1.72 && !isIslandSafeZone(ship.position.x, ship.position.z))
-      damageShip(mine);
+      damageShip('mine', mine);
     else if (mineRange > 68) placeMine(mine);
   }
   const shipSafe = isIslandSafeZone(ship.position.x, ship.position.z);
@@ -2689,31 +2729,36 @@ function animate() {
   }
   for (const battery of defenseBatteries) {
     battery.cooldown -= dt;
-    const planeTarget = carriers
-      .flatMap((carrier) => carrier.escortJets)
-      .map((escort) => ({
-        escort,
-        d: Math.hypot(
+    // Aircraft take priority over mines; both scans run without allocating.
+    let planeTarget = null,
+      planeDistance = 35;
+    for (const carrier of carriers)
+      for (const escort of carrier.escortJets) {
+        const d = Math.hypot(
           escort.jet.position.x - battery.group.position.x,
           escort.jet.position.z - battery.group.position.z
-        )
-      }))
-      .filter((v) => v.d < 35)
-      .sort((a, b) => a.d - b.d)[0];
-    const mineTarget = planeTarget
-      ? null
-      : mineNodes
-          .filter((m) => m.group.visible)
-          .map((m) => ({
-            mine: m,
-            d: Math.hypot(
-              m.group.position.x - battery.group.position.x,
-              m.group.position.z - battery.group.position.z
-            )
-          }))
-          .filter((v) => v.d < 21)
-          .sort((a, b) => a.d - b.d)[0];
-    const targetPosition = planeTarget?.escort.jet.position || mineTarget?.mine.group.position;
+        );
+        if (d < planeDistance) {
+          planeDistance = d;
+          planeTarget = escort;
+        }
+      }
+    let mineTarget = null;
+    if (!planeTarget) {
+      let mineDistance = 21;
+      for (const mine of mineNodes) {
+        if (!mine.group.visible) continue;
+        const d = Math.hypot(
+          mine.group.position.x - battery.group.position.x,
+          mine.group.position.z - battery.group.position.z
+        );
+        if (d < mineDistance) {
+          mineDistance = d;
+          mineTarget = mine;
+        }
+      }
+    }
+    const targetPosition = planeTarget?.jet.position || mineTarget?.group.position;
     if (targetPosition) {
       const dx = targetPosition.x - battery.group.position.x,
         dz = targetPosition.z - battery.group.position.z;
@@ -2743,8 +2788,8 @@ function animate() {
           showFlakBurst(end);
           battery.cooldown = 0.85;
         } else {
-          mineTarget.mine.group.visible = false;
-          mineTarget.mine.respawnAt = gameTime + rand(6, 10);
+          mineTarget.group.visible = false;
+          mineTarget.respawnAt = gameTime + rand(6, 10);
           battery.cooldown = 4.2;
         }
       }
@@ -2805,14 +2850,13 @@ function animate() {
   );
   for (let i = carrierShots.length - 1; i >= 0; i--) {
     const shot = carrierShots[i],
-      previous = shot.mesh.position.clone();
+      previous = scratchA.copy(shot.mesh.position);
     shot.age += dt;
     const t = clamp(shot.age / shot.duration, 0, 1),
       distance = shot.start.distanceTo(shot.target);
     shot.mesh.position.lerpVectors(shot.start, shot.target, t);
     shot.mesh.position.y += Math.sin(Math.PI * t) * Math.min(3, distance * 0.055);
-    shot.trail.geometry.dispose();
-    shot.trail.geometry = new THREE.BufferGeometry().setFromPoints([previous, shot.mesh.position]);
+    setTrail(shot.trail, previous, shot.mesh.position);
     if (t >= 1 && running) {
       const hit =
         !shipSafe &&
@@ -2820,7 +2864,7 @@ function animate() {
         shipLife > 0 &&
         Math.hypot(ship.position.x - shot.target.x, ship.position.z - shot.target.z) < 3.8;
       waterSplash(hit ? ship.position : shot.target, hit ? 1.4 : 0.85);
-      if (hit) damageShip(null, 10);
+      if (hit) damageShip('shell');
       scene.remove(shot.mesh);
       scene.remove(shot.trail);
       shot.trail.material.dispose();
@@ -2833,9 +2877,8 @@ function animate() {
     const t = clamp(shot.age / shot.duration, 0, 1);
     shot.mesh.position.lerpVectors(shot.start, shot.target, t);
     const travel = shot.start.distanceTo(shot.target);
-    const tail = shot.start.clone().lerp(shot.target, Math.max(0, t - 4 / travel));
-    shot.trail.geometry.dispose();
-    shot.trail.geometry = new THREE.BufferGeometry().setFromPoints([tail, shot.mesh.position]);
+    const tail = scratchA.copy(shot.start).lerp(shot.target, Math.max(0, t - 4 / travel));
+    setTrail(shot.trail, tail, shot.mesh.position);
     if (t >= 1 && running) {
       if (
         !shipSafe &&
@@ -2843,7 +2886,7 @@ function animate() {
         shipLife > 0 &&
         Math.hypot(ship.position.x - shot.target.x, ship.position.z - shot.target.z) < 3.8
       )
-        damageShip(null, shipLifeMax * 0.01);
+        damageShip('jet');
       scene.remove(shot.mesh);
       scene.remove(shot.trail);
       shot.trail.geometry.dispose();
@@ -2853,15 +2896,11 @@ function animate() {
   }
   for (let i = flares.length - 1; i >= 0; i--) {
     const flare = flares[i],
-      previous = flare.mesh.position.clone();
+      previous = scratchA.copy(flare.mesh.position);
     flare.age += dt;
     flare.velocity.y -= 1.85 * dt;
     flare.mesh.position.addScaledVector(flare.velocity, dt);
-    flare.trail.geometry.dispose();
-    flare.trail.geometry = new THREE.BufferGeometry().setFromPoints([
-      previous,
-      flare.mesh.position
-    ]);
+    setTrail(flare.trail, previous, flare.mesh.position);
     flare.mesh.material.opacity = clamp(1 - flare.age / flare.life, 0, 1);
     if (flare.age >= flare.life && running) {
       scene.remove(flare.mesh);
@@ -2902,10 +2941,7 @@ function animate() {
         pickup.respawnAt = gameTime + rand(5, 10);
         continue;
       }
-      const pickupScreen = pickup.group.position
-        .clone()
-        .add(new THREE.Vector3(0, 0.95, 0))
-        .project(camera);
+      const pickupScreen = projectTag(pickup.group.position, 0.95);
       pickup.tag.style.left = `${(pickupScreen.x * 0.5 + 0.5) * canvas.clientWidth}px`;
       pickup.tag.style.top = `${(-pickupScreen.y * 0.5 + 0.5) * canvas.clientHeight}px`;
       pickup.tag.style.display = pickupScreen.z > -1 && pickupScreen.z < 1 ? 'block' : 'none';
@@ -3017,6 +3053,7 @@ function animate() {
   cameraFollowZ += (ship.position.z - cameraFollowZ) * Math.min(1, dt * 2.4);
   hitShake = Math.max(0, hitShake - dt * 2.4);
   const shake = hitShake;
+  updateShadowLight(cameraFollowX, cameraFollowZ);
   camera.position.set(
     cameraFollowX +
       Math.sin(yaw) * Math.cos(pitch) * distance +
@@ -3028,18 +3065,12 @@ function animate() {
   );
   camera.lookAt(cameraFollowX, 1.35, cameraFollowZ);
   renderer.render(scene, camera);
-  const shipScreen = ship.position
-    .clone()
-    .add(new THREE.Vector3(0, 1.18, 0))
-    .project(camera);
+  const shipScreen = projectTag(ship.position, 1.18);
   shipTag.style.left = `${(shipScreen.x * 0.5 + 0.5) * canvas.clientWidth}px`;
   shipTag.style.top = `${(-shipScreen.y * 0.5 + 0.5) * canvas.clientHeight}px`;
   shipTag.style.display = shipScreen.z > -1 && shipScreen.z < 1 ? 'block' : 'none';
   for (const carrier of carriers) {
-    const screen = carrier.group.position
-      .clone()
-      .add(new THREE.Vector3(0, 4.2, 0))
-      .project(camera);
+    const screen = projectTag(carrier.group.position, 4.2);
     carrier.tag.style.left = `${(screen.x * 0.5 + 0.5) * canvas.clientWidth}px`;
     carrier.tag.style.top = `${(-screen.y * 0.5 + 0.5) * canvas.clientHeight}px`;
     carrier.tag.style.display =
@@ -3048,10 +3079,7 @@ function animate() {
         : 'none';
   }
   for (const dock of docks) {
-    const screen = dock.group.position
-      .clone()
-      .add(new THREE.Vector3(0, 1.5, 0))
-      .project(camera);
+    const screen = projectTag(dock.group.position, 1.5);
     dock.tag.style.left = `${clamp((screen.x * 0.5 + 0.5) * canvas.clientWidth, 70, canvas.clientWidth - 70)}px`;
     dock.tag.style.top = `${clamp((-screen.y * 0.5 + 0.5) * canvas.clientHeight, 46, canvas.clientHeight - 40)}px`;
     dock.tag.style.display =
@@ -3059,17 +3087,14 @@ function animate() {
         ? 'block'
         : 'none';
   }
-  const craterScreen = secondVolcano.position
-    .clone()
-    .add(new THREE.Vector3(0, 7.5, 0))
-    .project(camera);
+  const craterScreen = projectTag(secondVolcano.position, 6.6);
   cinderTag.style.left = `${clamp((craterScreen.x * 0.5 + 0.5) * canvas.clientWidth, 88, canvas.clientWidth - 88)}px`;
   cinderTag.style.top = `${clamp((-craterScreen.y * 0.5 + 0.5) * canvas.clientHeight, 45, canvas.clientHeight - 45)}px`;
   cinderTag.style.display =
     craterScreen.z > -1 &&
     craterScreen.z < 1 &&
-    Math.abs(craterScreen.x) < 1.1 &&
-    Math.abs(craterScreen.y) < 1.1
+    Math.abs(craterScreen.x) < 1 &&
+    Math.abs(craterScreen.y) < 1
       ? 'block'
       : 'none';
   if (gameTime >= radarTimer) {
