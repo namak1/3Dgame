@@ -1,6 +1,6 @@
 # Volcano Island — Cargo Run
 
-A standalone 3D arcade game set around Ember Isle and Cinder Key. Sail a small cargo boat between two volcano docks and two ports, load and discharge six connected deliveries, and stay afloat while mines drift and two U.S. Navy carriers patrol the sea.
+A standalone 3D arcade game on a closed volcanic lake. Sail between two large volcanic islands and two shore ports, load and discharge six connected deliveries, and stay afloat while mines drift and two U.S. Navy carriers patrol the water.
 
 ## Play
 

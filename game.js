@@ -38,7 +38,14 @@ function noise(x,z) {
   return Math.sin(x*2.61+Math.cos(z*1.3))*Math.cos(z*2.17)*0.45 +
     Math.sin(x*5.1+z*3.8)*0.16 + Math.cos(z*6.2-x*2.9)*0.08;
 }
-function coast(a) { return 4.95 + 0.19*Math.sin(a*5+0.3) + 0.11*Math.sin(a*9-1.2) + 0.10*Math.sin(a*13+0.6); }
+function baseCoast(a) { return 4.95 + 0.19*Math.sin(a*5+0.3) + 0.11*Math.sin(a*9-1.2) + 0.10*Math.sin(a*13+0.6); }
+function coast(a) { return baseCoast(a)*1.6; }
+const lakeCenterZ=18;
+function lakeRadius(a){
+  const ellipse=1/Math.hypot(Math.cos(a)/228,Math.sin(a)/164);
+  return ellipse*(1+.045*Math.sin(a*3-.5)+.025*Math.cos(a*8+1.2));
+}
+function insideLake(x,z,margin=0){const dx=x,dz=z-lakeCenterZ,a=Math.atan2(dz,dx);return Math.hypot(dx,dz)<lakeRadius(a)-margin;}
 function landHeight(r,a) {
   const x=r*Math.cos(a), z=r*Math.sin(a);
   const peak = 3.15*Math.exp(-Math.pow(r/2.45,1.82));
@@ -51,7 +58,7 @@ function terrainMesh() {
   const forest=new THREE.Color(0x304d38), beach=new THREE.Color(0x9a8060);
   for(let j=0;j<=rings;j++) for(let i=0;i<=segments;i++) {
     const a=i/segments*Math.PI*2, t=j/rings;
-    const r=0.68 + (coast(a)-0.68)*t;
+    const r=0.68 + (baseCoast(a)-0.68)*t;
     const h=landHeight(r,a);
     const x=r*Math.cos(a), z=r*Math.sin(a);
     pos.push(x,h,z);
@@ -113,8 +120,32 @@ function makeFlow(direction,length,width,seed) {
   }
 }
 makeFlow(.26,4.4,.31,.2); makeFlow(2.58,3.65,.29,1.9); makeFlow(4.55,3.95,.20,3.4);
+// Scale both volcanic islands without moving the ship, sea, or shoreline scenery.
+const emberVolcano=new THREE.Group();
+for(const child of [...scene.children].slice(4))emberVolcano.add(child);
+emberVolcano.scale.set(1.6,1.6,1.6);scene.add(emberVolcano);
+fireLight.position.y=5.5;
 
-const ocean = new THREE.Mesh(new THREE.PlaneGeometry(900,900,1,1),new THREE.ShaderMaterial({
+function radialMesh(inner,outer,rings=16,segments=192){
+  const positions=[],colors=[],indices=[],beach=new THREE.Color(0x9e8e70),forest=new THREE.Color(0x415c43),rock=new THREE.Color(0x55544e);
+  for(let j=0;j<=rings;j++)for(let i=0;i<=segments;i++){
+    const a=i/segments*Math.PI*2,t=j/rings,shore=lakeRadius(a),r=inner?shore+t*(outer-shore):t*shore;
+    const x=Math.cos(a)*r,z=lakeCenterZ+Math.sin(a)*r;
+    const hill=inner?Math.min(1,t*7)*(1.2+2.7*(.5+.5*Math.sin(a*6+1))):0;
+    const height=inner ? .08+hill+Math.sin(r*.11+a*9)*.38*Math.min(1,t*7) : -.095;
+    positions.push(x,height,z);
+    if(inner){const c=beach.clone().lerp(forest,Math.min(1,t*12)).lerp(rock,Math.min(1,Math.max(0,t-.06)*3));c.offsetHSL(0,0,noise(x*.12,z*.12)*.06);colors.push(c.r,c.g,c.b);}
+  }
+  for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){const k=j*(segments+1)+i;indices.push(k,k+segments+1,k+1,k+1,k+segments+1,k+segments+2);}
+  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setIndex(indices);
+  if(inner){geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geo.computeVertexNormals();}
+  return geo;
+}
+const shore=new THREE.Mesh(radialMesh(true,650),new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,side:THREE.DoubleSide}));shore.receiveShadow=true;scene.add(shore);
+const lakeFoamPoints=[];for(let i=0;i<=360;i++){const a=i/360*Math.PI*2,r=lakeRadius(a)-.4;lakeFoamPoints.push(new THREE.Vector3(Math.cos(a)*r,-.035,lakeCenterZ+Math.sin(a)*r));}
+scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(lakeFoamPoints),new THREE.LineBasicMaterial({color:0xa2d4c2,transparent:true,opacity:.47})));
+
+const ocean = new THREE.Mesh(radialMesh(false,0,24),new THREE.ShaderMaterial({
   uniforms:{uTime:{value:0},uLight:{value:new THREE.Vector3(-.55,.8,.35)},uDay:{value:0}},
   vertexShader:`varying vec3 vWorld; void main(){vec4 p=modelMatrix*vec4(position,1.);vWorld=p.xyz;gl_Position=projectionMatrix*viewMatrix*p;}`,
   fragmentShader:`uniform float uTime;uniform float uDay;varying vec3 vWorld;
@@ -129,7 +160,7 @@ const ocean = new THREE.Mesh(new THREE.PlaneGeometry(900,900,1,1),new THREE.Shad
     gl_FragColor=vec4(col,1.);}`,
   side:THREE.DoubleSide
 }));
-ocean.rotation.x=-Math.PI/2; ocean.position.y=-.095; scene.add(ocean);
+scene.add(ocean);
 
 const foamPoints=[];
 for(let i=0;i<=360;i++) {let a=i/360*Math.PI*2,r=coast(a)+.045;foamPoints.push(new THREE.Vector3(r*Math.cos(a),-.055,r*Math.sin(a)));}
@@ -219,8 +250,8 @@ for(const [x,z,color] of [[.82,-.2,0xc28b4d],[1.05,.12,0x5c8872],[.65,.2,0xb7794
 shipCargoCrates.visible=false;
 
 // The outer route now links two volcanic islands and two working harbors.
-const secondVolcanoSite={id:'cinder',name:'CINDER KEY',x:100,z:-100,radius:9.4};
-const secondVolcano=new THREE.Group();secondVolcano.position.set(secondVolcanoSite.x,0,secondVolcanoSite.z);scene.add(secondVolcano);
+const secondVolcanoSite={id:'cinder',name:'CINDER KEY',x:100,z:-100,radius:16};
+const secondVolcano=new THREE.Group();secondVolcano.position.set(secondVolcanoSite.x,0,secondVolcanoSite.z);secondVolcano.scale.setScalar(1.65);scene.add(secondVolcano);
 const cinderShore=new THREE.Mesh(new THREE.SphereGeometry(1,28,18),new THREE.MeshStandardMaterial({color:0x9a8060,roughness:.96}));cinderShore.scale.set(10,.62,8.8);cinderShore.position.y=-.02;cinderShore.receiveShadow=true;secondVolcano.add(cinderShore);
 const cinderRock=new THREE.Mesh(new THREE.ConeGeometry(6.15,7.8,13,5),new THREE.MeshStandardMaterial({color:0x3a3435,roughness:.97,flatShading:true}));cinderRock.position.y=3.65;cinderRock.scale.z=.9;cinderRock.castShadow=true;secondVolcano.add(cinderRock);
 const cinderRim=new THREE.Mesh(new THREE.TorusGeometry(.9,.18,8,32),new THREE.MeshBasicMaterial({color:0xff6333,transparent:true,opacity:.9}));cinderRim.position.y=7.15;cinderRim.rotation.x=Math.PI/2;secondVolcano.add(cinderRim);
@@ -255,10 +286,11 @@ const dockSites=[
   {id:'khor',name:'KHOR HAVEN',kind:'PORT',x:-164,z:94,rotation:.25},
   {id:'ember',name:'EMBER ISLE',kind:'VOLCANO',x:8,z:6,rotation:-.55},
   {id:'cinder',name:'CINDER KEY',kind:'VOLCANO',x:110,z:-83,rotation:.2},
-  {id:'ras',name:'RAS SUR',kind:'PORT',x:171,z:151,rotation:-.38}
+  {id:'ras',name:'RAS SUR',kind:'PORT',x:151,z:109,rotation:-.38}
 ];
 const docks=dockSites.map(makeDock),dockById=Object.fromEntries(docks.map(d=>[d.id,d]));
 function navigableWater(x,z,margin=2.5){
+  if(!insideLake(x,z,margin))return false;
   const radius=Math.hypot(x,z),angle=Math.atan2(z,x);
   if(radius<coast(angle)+margin)return false;
   if(Math.hypot(x-secondVolcanoSite.x,z-secondVolcanoSite.z)<secondVolcanoSite.radius+margin)return false;
@@ -312,7 +344,7 @@ function makeBattery(x,y,z){
   const optic=new THREE.Mesh(new THREE.SphereGeometry(.12,9,7),new THREE.MeshBasicMaterial({color:0x8ff4df}));optic.position.set(.05,.42,.18);turret.add(optic);
   return {group,turret,cooldown:rand(.3,2.2),phase:rand(0,Math.PI*2)};
 }
-const batterySites=[...[-2.5,-.35,1.75].map(a=>({x:Math.cos(a)*4.85,y:landHeight(4.85,a),z:Math.sin(a)*4.85})),...[-2.55,-.35,1.85].map(a=>({x:secondVolcanoSite.x+Math.cos(a)*8.05,y:.31,z:secondVolcanoSite.z+Math.sin(a)*7.1}))];
+const batterySites=[...[-2.5,-.35,1.75].map(a=>({x:Math.cos(a)*7.35,y:landHeight(4.6,a)*1.6,z:Math.sin(a)*7.35})),...[-2.55,-.35,1.85].map(a=>({x:secondVolcanoSite.x+Math.cos(a)*13.2,y:.5,z:secondVolcanoSite.z+Math.sin(a)*11.7}))];
 const defenseBatteries=batterySites.map(s=>makeBattery(s.x,s.y,s.z));
 const splashObjects=[];
 function waterSplash(position,power=1){
@@ -399,7 +431,7 @@ function addCarrierJet(parent,x,z,heading=Math.PI){
 }
 const carrierPatrols=[
   [[-135,42],[-108,-20],[-58,-48],[-10,-54],[35,-36],[-30,-35],[-90,16]],
-  [[40,55],[82,9],[137,17],[196,59],[180,124],[112,128],[65,91]]
+  [[40,55],[82,9],[137,17],[180,55],[160,106],[112,128],[65,91]]
 ];
 function makeCarrier(index,waypoints){
   const group=new THREE.Group();group.position.set(waypoints[0][0],0,waypoints[0][1]);scene.add(group);
@@ -585,10 +617,10 @@ for(let i=0;i<125;i++) {
   const a=rand(0,Math.PI*2),r=rand(2.55,4.45),x=r*Math.cos(a),z=r*Math.sin(a);
   if (Math.abs(Math.sin(a-.26))<.15 || Math.abs(Math.sin(a-2.58))<.13 || Math.abs(Math.sin(a-4.55))<.11) continue;
   const y=landHeight(r,a),s=rand(.65,1.25),h=rand(.28,.58)*s;
-  const trunk=new THREE.Mesh(trunkGeo,trunkMat); trunk.scale.set(.55,h*.55,.55);trunk.position.set(x,y+h*.28,z);scene.add(trunk);
+  const trunk=new THREE.Mesh(trunkGeo,trunkMat); trunk.scale.set(.55,h*.55,.55);trunk.position.set(x,y+h*.28,z);emberVolcano.add(trunk);
   for(let j=0;j<2;j++){const crown=new THREE.Mesh(coneGeo,leafMats[Math.floor(rand(0,4))]);
     crown.scale.set(h*(j?.48:.62),h*(j?.95:1.0),h*(j?.48:.62));
-    crown.position.set(x,y+h*(j?.98:.68),z); crown.castShadow=true;scene.add(crown);}
+    crown.position.set(x,y+h*(j?.98:.68),z); crown.castShadow=true;emberVolcano.add(crown);}
 }
 
 // Distant pinpoints and drifting silhouettes help the island read in depth.
@@ -612,20 +644,20 @@ function addSpark(force=1) {
   if(sparks.length>240){const old=sparks.shift();scene.remove(old.mesh);}
   const mesh=new THREE.Mesh(sparkGeo,sparkMats[Math.floor(rand(0,3))].clone());
   const size=rand(.025,.092)*force;mesh.scale.setScalar(size);
-  mesh.position.set(rand(-.32,.32),rand(3.05,3.28),rand(-.32,.32));scene.add(mesh);
+  mesh.position.set(rand(-.5,.5),rand(4.9,5.3),rand(-.5,.5));scene.add(mesh);
   const angle=rand(0,Math.PI*2),push=rand(.3,1.95)*force;
   sparks.push({mesh,vel:v3(Math.cos(angle)*push,rand(1.8,3.5)*force,Math.sin(angle)*push),life:rand(1.4,2.4),max:2.4});
 }
 function addSmoke() {
   if(smoke.length>48){const old=smoke.shift();scene.remove(old.mesh);old.mesh.material.dispose();}
   const mesh=new THREE.Mesh(smokeGeo,smokeMat.clone());
-  mesh.position.set(rand(-.17,.17),3.1,rand(-.17,.17));mesh.scale.setScalar(rand(.16,.27));scene.add(mesh);
+  mesh.position.set(rand(-.27,.27),5.0,rand(-.27,.27));mesh.scale.setScalar(rand(.24,.41));scene.add(mesh);
   smoke.push({mesh,vel:v3(rand(-.28,.28),rand(.35,.62),rand(-.25,.25)),life:rand(3.3,5.2),max:5.2});
 }
 function burst(count=45) {for(let i=0;i<count;i++) addSpark(rand(.65,1.3));fireLight.intensity=37;}
 
 const shockwaves=[];
-function pulse(x=0,z=0,y=2.67){
+function pulse(x=0,z=0,y=4.27){
   const mesh=new THREE.Mesh(new THREE.RingGeometry(.3,.34,64),new THREE.MeshBasicMaterial({color:0xffa647,transparent:true,opacity:.85,side:THREE.DoubleSide,depthWrite:false}));
   mesh.rotation.x=-Math.PI/2;mesh.position.set(x,y,z);scene.add(mesh);shockwaves.push({mesh,life:1});
 }
@@ -920,7 +952,7 @@ function animate(){requestAnimationFrame(animate);
       carrier.tag.style.display=screen.z>-1&&screen.z<1&&Math.abs(screen.x)<1.05&&Math.abs(screen.y)<1.05?'block':'none';
     }
     for(const dock of docks){const screen=dock.group.position.clone().add(new THREE.Vector3(0,1.5,0)).project(camera);dock.tag.style.left=`${clamp((screen.x*.5+.5)*canvas.clientWidth,70,canvas.clientWidth-70)}px`;dock.tag.style.top=`${clamp((-screen.y*.5+.5)*canvas.clientHeight,46,canvas.clientHeight-40)}px`;dock.tag.style.display=screen.z>-1&&screen.z<1&&Math.abs(screen.x)<1.15&&Math.abs(screen.y)<1.15?'block':'none';}
-    const craterScreen=secondVolcano.position.clone().add(new THREE.Vector3(0,9,0)).project(camera);cinderTag.style.left=`${clamp((craterScreen.x*.5+.5)*canvas.clientWidth,88,canvas.clientWidth-88)}px`;cinderTag.style.top=`${clamp((-craterScreen.y*.5+.5)*canvas.clientHeight,45,canvas.clientHeight-45)}px`;cinderTag.style.display=craterScreen.z>-1&&craterScreen.z<1&&Math.abs(craterScreen.x)<1.1&&Math.abs(craterScreen.y)<1.1?'block':'none';
+    const craterScreen=secondVolcano.position.clone().add(new THREE.Vector3(0,13,0)).project(camera);cinderTag.style.left=`${clamp((craterScreen.x*.5+.5)*canvas.clientWidth,88,canvas.clientWidth-88)}px`;cinderTag.style.top=`${clamp((-craterScreen.y*.5+.5)*canvas.clientHeight,45,canvas.clientHeight-45)}px`;cinderTag.style.display=craterScreen.z>-1&&craterScreen.z<1&&Math.abs(craterScreen.x)<1.1&&Math.abs(craterScreen.y)<1.1?'block':'none';
     if(gameTime>=radarTimer){drawRadar();radarTimer=gameTime+.12;}
 }
 animate();
