@@ -272,7 +272,7 @@ const dockSites=[
   {id:'cinder',name:'CINDER KEY',x:80,z:-62,rotation:-.55}
 ];
 const docks=dockSites.map(makeDock),dockById=Object.fromEntries(docks.map(d=>[d.id,d]));
-const safeZoneWidth=10;
+const safeZoneWidth=4;
 function islandClearance(x,z,cx,cz){
   const dx=x-cx,dz=z-cz;
   return Math.hypot(dx,dz)-coast(Math.atan2(dz,dx));
@@ -488,7 +488,7 @@ const carriers=carrierPatrols.map((path,i)=>makeCarrier(i+1,path));
 function placeShipAtStart(){
   const startSite=dockById[missionContracts[0]?.from||'ember'],nextSite=dockById[missionContracts[0]?.to||'cinder'];
   const dx=nextSite.x-startSite.x,dz=nextSite.z-startSite.z;
-  const side=2.5,offsetX=-Math.sin(startSite.rotation)*side,offsetZ=Math.cos(startSite.rotation)*side;
+  const side=1.5,offsetX=-Math.sin(startSite.rotation)*side,offsetZ=Math.cos(startSite.rotation)*side;
   ship.position.set(startSite.x+offsetX,-.025,startSite.z+offsetZ);
   ship.rotation.y=Math.atan2(dz,-dx);
   for(const mine of mineNodes)placeMine(mine);
