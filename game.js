@@ -350,15 +350,17 @@ function refreshLifeHud(){
 }
 function damageShip(mine,amount=null){
   const damage=amount??(mine?shipLifeMax*.1:10);
-  shipLife=Math.max(0,shipLife-damage);boatVelocity*=.2;hitShake=Math.min(1,hitShake+.52);
-  refreshLifeHud();waterSplash(ship.position.clone(),mine ? .55 : 1.15);
+  shipLife=Math.max(0,shipLife-damage);
+  if(damage>=5)boatVelocity*=.2;
+  hitShake=Math.min(1,hitShake+(damage>=5?0.52:0.08));
+  refreshLifeHud();waterSplash(ship.position.clone(),mine?0.55:damage>=5?1.15:0.35);
   if(mine){mine.group.visible=false;mine.respawnAt=gameTime+7;}
   hitFlash.classList.remove('active');void hitFlash.offsetWidth;hitFlash.classList.add('active');
   setTimeout(()=>hitFlash.classList.remove('active'),260);
   if(shipLife===0&&!missionEnded){
     boatVelocity=0;missionEnded=true;missionWon=false;sinking=true;sinkElapsed=0;
     boatKeys.clear();refreshMissionHud();showMissionToast('HULL BREACHED · SINKING');
-  }else if(cargoOnboard&&!missionEnded){cargoCondition=Math.max(0,cargoCondition-(mine?24:16));if(cargoCondition===0)failMission('CARGO DESTROYED · RUN FAILED');else refreshMissionHud();}
+  }else if(cargoOnboard&&!missionEnded){cargoCondition=Math.max(0,cargoCondition-(mine?24:damage>=5?16:1));if(cargoCondition===0)failMission('CARGO DESTROYED · RUN FAILED');else refreshMissionHud();}
 }
 
 // Two stylized U.S. Navy carriers patrol the lake and fire when the boat closes in.
@@ -459,7 +461,7 @@ function makeCarrier(index,waypoints){
   const wakeCore=new THREE.Mesh(new THREE.BoxGeometry(4.8,.024,.2),wakeMat.clone());wakeCore.position.set(-13.4,-.063,0);group.add(wakeCore);
   const name=index===1?'USS ABRAHAM LINCOLN':'USS NIMITZ';const hullNumber=index===1?'CVN-72':'CVN-68';
   const tag=document.createElement('div');tag.className='carrier-tag';tag.textContent=`${name} · ${hullNumber}`;document.body.appendChild(tag);
-  const escortJets=[0,1].map((_,i)=>{const jet=addCarrierJet(scene,0,0);jet.scale.setScalar(2.25);return {jet,phase:i*Math.PI};});
+  const escortJets=[0,1].map((_,i)=>{const jet=addCarrierJet(scene,0,0);jet.scale.setScalar(2.25);return {jet,phase:i*Math.PI,cooldown:rand(.2,1.1)};});
   return {group,turrets,tag,index,name,hullNumber,escortJets,patrolPath:waypoints.map(([px,pz])=>new THREE.Vector2(px,pz)),waypoint:1,patrolSpeed:index===1?1.85:2.05,mode:'patrol',pursuit:0,returnIndex:0,cooldown:rand(.5,2.2),shotIndex:0,nextFlareAt:gameTime+40,engageCooldown:0};
 }
 const carriers=carrierPatrols.map((path,i)=>makeCarrier(i+1,path));
@@ -528,16 +530,28 @@ function completeDockAction(){
 }
 resetMissionRoute();placeShipAtStart();
 const carrierShots=[];
+const jetShots=[];
 const shotGeo=new THREE.SphereGeometry(.2,8,7);
 const shotMat=new THREE.MeshBasicMaterial({color:0xffc65d});
 const shotTrailMat=new THREE.LineBasicMaterial({color:0xff7141,transparent:true,opacity:.9});
+const jetShotGeo=new THREE.SphereGeometry(.12,8,7);
+const jetShotMat=new THREE.MeshBasicMaterial({color:0xffe4a6});
+const jetTrailMat=new THREE.LineBasicMaterial({color:0xff955d,transparent:true,opacity:.88});
 function fireCarrierShot(carrier,turret){
   carrier.group.updateMatrixWorld(true);
   const start=turret.localToWorld(new THREE.Vector3(-1.1,.32,0));
   const target=ship.position.clone().add(new THREE.Vector3(0,.24,0));
   const mesh=new THREE.Mesh(shotGeo,shotMat);mesh.position.copy(start);scene.add(mesh);
   const trail=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,start]),shotTrailMat.clone());scene.add(trail);
-  carrierShots.push({mesh,trail,start:start.clone(),target,duration:Math.max(.38,start.distanceTo(target)/48),age:0});
+  carrierShots.push({mesh,trail,start:start.clone(),target,duration:Math.max(.3,start.distanceTo(target)/85),age:0});
+}
+function fireJetShot(escort){
+  const jet=escort.jet;
+  const start=jet.position.clone().add(new THREE.Vector3(-Math.cos(jet.rotation.y)*1.6,-.05,Math.sin(jet.rotation.y)*1.6));
+  const target=ship.position.clone().add(new THREE.Vector3(0,.18,0));
+  const mesh=new THREE.Mesh(jetShotGeo,jetShotMat);mesh.position.copy(start);scene.add(mesh);
+  const trail=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,start]),jetTrailMat.clone());scene.add(trail);
+  jetShots.push({mesh,trail,start,target,duration:Math.max(.3,start.distanceTo(target)/60),age:0});
 }
 
 // Collectible cash and med kits float for 30 seconds, then respawn elsewhere.
@@ -712,10 +726,10 @@ let cameraFollowX=ship.position.x,cameraFollowZ=ship.position.z;
 function restartVoyage(){
   missionEnded=false;missionWon=false;running=true;sinking=false;sinkElapsed=0;$('#sunkModal').hidden=true;boatKeys.clear();boatVelocity=0;throttleHold=0;lastThrottle=0;
   shipLife=shipLifeMax;ship.rotation.x=ship.rotation.z=0;refreshLifeHud();
-  for(const shot of carrierShots){scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();}carrierShots.length=0;
+  for(const shot of [...carrierShots,...jetShots]){scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();}carrierShots.length=0;jetShots.length=0;
   for(const flare of flares){scene.remove(flare.mesh);scene.remove(flare.trail);flare.trail.geometry.dispose();flare.trail.material.dispose();}flares.length=0;
   for(const splash of splashObjects){scene.remove(splash.group);for(const child of splash.group.children){child.geometry?.dispose();child.material?.dispose();}}splashObjects.length=0;
-  carriers.forEach(carrier=>{const path=carrier.patrolPath;carrier.group.position.set(path[0].x,0,path[0].y);carrier.group.rotation.y=Math.atan2(path[1].y-path[0].y,path[0].x-path[1].x);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;});
+  carriers.forEach(carrier=>{const path=carrier.patrolPath;carrier.group.position.set(path[0].x,0,path[0].y);carrier.group.rotation.y=Math.atan2(path[1].y-path[0].y,path[0].x-path[1].x);carrier.waypoint=1;carrier.mode='patrol';carrier.pursuit=0;carrier.returnIndex=0;carrier.engageCooldown=0;carrier.nextFlareAt=gameTime+40;for(const escort of carrier.escortJets)escort.cooldown=rand(.2,1.1);});
   for(const shot of towerShotMeshes){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();}towerShotMeshes.length=0;
   resetMissionRoute();placeShipAtStart();cameraFollowX=ship.position.x;cameraFollowZ=ship.position.z;targetPitch=pitch=.35;targetDistance=distance=15.5;
   for(let i=0;i<pickups.length;i++){pickups[i].group.visible=false;pickups[i].tag.style.display='none';placePickup(pickups[i],i<5,carriers[i%2]);}
@@ -831,7 +845,7 @@ function animate(){requestAnimationFrame(animate);
     if(running&&mineRange<1.72)damageShip(mine);
     else if(mineRange>68)placeMine(mine);
   }
-  let closestCarrierRange=Infinity;
+  let closestCarrierRange=Infinity,aircraftInRange=false;
   for(const carrier of carriers){
     carrier.cooldown-=dt;carrier.engageCooldown=Math.max(0,carrier.engageCooldown-dt);
     const range=Math.hypot(carrier.group.position.x-ship.position.x,carrier.group.position.z-ship.position.z);
@@ -850,17 +864,20 @@ function animate(){requestAnimationFrame(animate);
       if(steerCarrier(carrier,target,dt,2.25)<9){carrier.mode='patrol';carrier.waypoint=(carrier.returnIndex+1)%carrier.patrolPath.length;}
     }
     for(const escort of carrier.escortJets){
-      const phase=gameTime*.72+escort.phase+carrier.index;
-      const x=carrier.group.position.x+Math.cos(phase)*10,z=carrier.group.position.z+Math.sin(phase)*7;
+      const phase=gameTime*.32+escort.phase+carrier.index;
+      const x=carrier.group.position.x+Math.cos(phase)*21,z=carrier.group.position.z+Math.sin(phase)*16;
       const next=phase+.03;
       escort.jet.position.set(x,5.8+Math.sin(phase*2)*.8,z);
-      escort.jet.rotation.y=Math.atan2(Math.sin(next)*7-Math.sin(phase)*7,-(Math.cos(next)*10-Math.cos(phase)*10));
+      escort.jet.rotation.y=Math.atan2(Math.sin(next)*16-Math.sin(phase)*16,-(Math.cos(next)*21-Math.cos(phase)*21));
       escort.jet.rotation.z=.12*Math.sin(phase);
+      escort.cooldown=Math.max(0,escort.cooldown-dt);
+      const jetRange=Math.hypot(x-ship.position.x,z-ship.position.z);
+      if(jetRange<=30){aircraftInRange=true;if(running&&!missionEnded&&shipLife>0&&escort.cooldown<=0){fireJetShot(escort);escort.cooldown=1.35;}}
     }
     if(running&&gameTime>=carrier.nextFlareAt){launchFlare(carrier);carrier.nextFlareAt+=40;}
     const currentRange=Math.hypot(carrier.group.position.x-ship.position.x,carrier.group.position.z-ship.position.z);
     closestCarrierRange=Math.min(closestCarrierRange,currentRange);
-    if(currentRange<=23&&shipLife>0){
+    if(currentRange<=43&&shipLife>0){
       carrier.group.updateMatrixWorld(true);
       const targetLocal=carrier.group.worldToLocal(ship.position.clone());
       for(const turret of carrier.turrets)turret.rotation.y=Math.atan2(targetLocal.z-turret.position.z,-(targetLocal.x-turret.position.x));
@@ -875,16 +892,26 @@ function animate(){requestAnimationFrame(animate);
   }
   for(let i=towerShotMeshes.length-1;i>=0;i--){const shot=towerShotMeshes[i];shot.life-=dt;shot.mesh.material.opacity=Math.max(0,shot.life/.18);if(shot.life<=0){scene.remove(shot.mesh);shot.mesh.geometry.dispose();shot.mesh.material.dispose();towerShotMeshes.splice(i,1);}}
   const status=$('#status');
-  const hullPercent=shipLife/shipLifeMax*100;status.textContent=sinking?'VESSEL SINKING':!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):hullPercent<=30?'HULL CRITICAL':closestCarrierRange<18?'UNDER FIRE':closestCarrierRange<26?'CARRIER ALERT':'LIVE SIMULATION';
-  status.classList.toggle('danger',running&&(hullPercent<=30||closestCarrierRange<26));
+  const hullPercent=shipLife/shipLifeMax*100;status.textContent=sinking?'VESSEL SINKING':!running?(missionEnded?(missionWon?'VOYAGE COMPLETE':'VESSEL LOST'):'GAME PAUSED'):hullPercent<=30?'HULL CRITICAL':aircraftInRange?'AIRCRAFT ATTACK':closestCarrierRange<43?'UNDER FIRE':closestCarrierRange<52?'CARRIER ALERT':'LIVE SIMULATION';
+  status.classList.toggle('danger',running&&(hullPercent<=30||aircraftInRange||closestCarrierRange<43));
   for(let i=carrierShots.length-1;i>=0;i--){
     const shot=carrierShots[i],previous=shot.mesh.position.clone();shot.age+=dt;
     const t=clamp(shot.age/shot.duration,0,1),distance=shot.start.distanceTo(shot.target);
     shot.mesh.position.lerpVectors(shot.start,shot.target,t);
     shot.mesh.position.y+=Math.sin(Math.PI*t)*Math.min(3,distance*.055);
     shot.trail.geometry.dispose();shot.trail.geometry=new THREE.BufferGeometry().setFromPoints([previous,shot.mesh.position]);
-    if(t>=1&&running){const hit=shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<2.8;waterSplash(hit?ship.position:shot.target,hit?1.4:.85);if(hit)damageShip(null,10);
+    if(t>=1&&running){const hit=!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8;waterSplash(hit?ship.position:shot.target,hit?1.4:.85);if(hit)damageShip(null,10);
       scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.material.dispose();carrierShots.splice(i,1);}
+  }
+  for(let i=jetShots.length-1;i>=0;i--){
+    const shot=jetShots[i],previous=shot.mesh.position.clone();shot.age+=dt;
+    const t=clamp(shot.age/shot.duration,0,1);
+    shot.mesh.position.lerpVectors(shot.start,shot.target,t);
+    shot.trail.geometry.dispose();shot.trail.geometry=new THREE.BufferGeometry().setFromPoints([previous,shot.mesh.position]);
+    if(t>=1&&running){
+      if(!missionEnded&&shipLife>0&&Math.hypot(ship.position.x-shot.target.x,ship.position.z-shot.target.z)<3.8)damageShip(null,shipLifeMax*.01);
+      scene.remove(shot.mesh);scene.remove(shot.trail);shot.trail.geometry.dispose();shot.trail.material.dispose();jetShots.splice(i,1);
+    }
   }
   for(let i=flares.length-1;i>=0;i--){
     const flare=flares[i],previous=flare.mesh.position.clone();flare.age+=dt;flare.velocity.y-=1.85*dt;flare.mesh.position.addScaledVector(flare.velocity,dt);
