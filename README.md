@@ -1,30 +1,33 @@
-# Blue Passage — 3D Gulf Run
+# Volcano Island — Cargo Run
 
-A stylized 3D arcade voyage between India and Iraq, through the Indian Ocean, Sea of Oman, Strait of Hormuz and Persian Gulf. Choose either direction and reach the final beacon with at least 1% hull integrity.
+A standalone 3D arcade game set around Ember Isle and Cinder Key. Sail a small cargo boat between two volcano docks and two ports, load and discharge four randomized delivery contracts, and stay afloat while mines drift and two U.S. Navy carriers patrol the sea.
 
-## Play offline
-Download **Blue-Passage-offline.html**, then double-click it. Everything is embedded: no server, packages, CDN, account or internet connection required. A browser with WebGL is required.
+## Play
 
-For the modular version, open `index.html` with `game.js` and `vendor/` alongside it, or serve the repository with any static web server.
+Open `index.html` in a modern browser with WebGL enabled. It includes Three.js and runs offline. `Volcano-Island-offline.html` is the same self-contained game as a separate download.
 
 ## Controls
-- A/D or left/right: steer
-- W/S or up/down: throttle
-- Shift: boost (automatically recharges)
-- Space: brake
-- C: switch camera
-- P: pause/resume
-- Touch buttons on phones/tablets
 
-Follow mint waypoint rings in order. Green crates restore 22% hull. Orange rings warn of incoming rockets and drones; move out before impact. Mines appear randomly around Hormuz. Two volcanic islands rise beside the sea lanes, pale surf traces the coasts, and eight defense batteries intercept nearby rockets and drones. Three US Navy vessels patrol the Sea of Oman alongside four aircraft. Explorer mode reduces damage and attack frequency. Shoreline and ship collisions damage your hull.
+- **W / S** or **↑ / ↓**: accelerate / reverse
+- **A / D** or **← / →**: steer
+- **Hold E** (or Enter) at the highlighted dock to load or discharge; the boat must be stopped and within 4.5 m
+- **Drag**: orbit the camera; **scroll**: zoom
+- **P** is not used; use the Pause button in the panel
+- Touch controls are available on phones and tablets
 
-This is a fictional arcade scenario, with compressed, approximate geography, not a navigation chart or real-world military simulation.
+A run has four cargo contracts and eight dock actions. The route varies on restart and visits both volcanoes and both ports. Earn delivery cash and collect expiring money and health packs. The upgrade shop uses earned money for engine, steering, and hull improvements. Six coast batteries can destroy mines close to the islands. The carriers patrol closed routes, intercept the boat briefly when it comes close, and return to their patrol paths. They fire at close range and launch a flare every 40 seconds.
 
-## Files
-- `index.html`: interface
-- `game.js`: game logic and procedural 3D scene
-- `vendor/three.min.js`: bundled Three.js r160 (MIT; license alongside)
-- `Blue-Passage-offline.html`: complete single-file edition
-- `build-offline.py`: rebuild the offline edition after edits
+Mines remove 10% of hull integrity on contact; carrier fire damages the boat as well. The run ends if the hull reaches zero. All locations are fictional arcade scenery rather than a navigation chart.
 
-Run `python3 build-offline.py` to regenerate the standalone file.
+## Build the offline page
+
+Install dependencies and rebuild after editing `game.js` or `index.template.html`:
+
+```sh
+npm install
+npm run build
+```
+
+The build writes the playable `index.html` and the duplicate `Volcano-Island-offline.html`.
+
+Three.js is distributed under the MIT license; see `THREE-LICENSE.txt`.
